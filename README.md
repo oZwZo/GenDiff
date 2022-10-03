@@ -1,3 +1,3 @@
 # Diffusion Modeling on Differentiation Landscape
 
-<img src="diffusive_waddington.jpg"  width='700'>
+<img src="difusoin_waddington.jpg"  width='700'>
