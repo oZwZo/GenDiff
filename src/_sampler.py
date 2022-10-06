@@ -66,11 +66,11 @@ def cosine_beta_schedule(timesteps, s=0.08):
     return  betas_clipped
 
 
-#                             __         
-#     ___ ___ _ __ _   ___   / /___  ____
-#    (_-</ _ `//  ' \ / _ \ / // -_)/ __/
-#   /___/\_,_//_/_/_// .__//_/ \__//_/   
-#                   /_/                  
+#                                               __         
+#                       ___ ___ _ __ _   ___   / /___  ____
+#                      (_-</ _ `//  ' \ / _ \ / // -_)/ __/
+#                     /___/\_,_//_/_/_// .__//_/ \__//_/   
+#                                     /_/                  
 
 
 class DiffusionSampler_base(object):
@@ -85,7 +85,8 @@ class DiffusionSampler_base(object):
         super().__init__()
         self.model = model # epsilon_theta 
         self.total_timestep = timesteps
-        self.betas = scheduler(timesteps, **scheduler_kwargs)
+        scheduler_class = eval(scheduler)
+        self.betas = scheduler_class(timesteps, **scheduler_kwargs)
         self._compute_alphas()
 
 
@@ -122,6 +123,19 @@ class DiffusionSampler_base(object):
     def q_sample(self, x_0, t, noise=None):
         # TO be covered by child class
         raise NotImplementedError()
+    
+    @torch.no_grad()
+    def q_sample_loop(self, x_0,  noise=None): 
+        r"""
+        $x_{0}$ -> $x_{t}$ ; corrupt matrix to pure noise
+        """
+        X_t = X_0
+        corrupted_Xs = []
+        for t_i in tqdm(range(0,self.total_timestep), "Adding noise :" , total=self.total_timestep):
+            T_matrix = torch.full((b,), t_i, device=device, dtype=torch.long)
+            X_t = self.q_sample(X_t, T_matrix)
+            corrupted_Xs.append(X_t)
+        return corrupted_Xs
     
     @torch.no_grad()
     def p_sample(self):
@@ -182,7 +196,7 @@ class DDPM_Sampler(DiffusionSampler_base):
 
     """
     def __init__(self, model : nn.Module,
-                       scheduler: callable, 
+                       scheduler: str, 
                        loss_type : str, 
                        timesteps=200, 
                        **scheduler_kwargs):
@@ -264,8 +278,7 @@ class DDIM_Sampler(DiffusionSampler_base):
                  loss_type = 'huber',
                  **scheduler_kwargs):
         # ignore input scheduler
-        scheduler=quadratic_beta_schedule
-        super().__init__( model, scheduler, timesteps, loss_type, **scheduler_kwargs)
+        super().__init__( model, "quadratic_beta_schedule", timesteps, loss_type, **scheduler_kwargs)
 
         self.discretize = discretize
         self.eta = eta
