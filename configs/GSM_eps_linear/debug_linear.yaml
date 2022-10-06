@@ -1,0 +1,38 @@
+---
+# This is a example file for main train config
+# To run a new experiment, duplicate this yaml file and rename it
+
+# High level params
+module_class: Epsilon_Linear
+anndata_path: cpa_datasets/Norman2019_prep_new.h5ad
+sampler_class: DDPM_Sampler
+pretrain_embedder_pth: null
+fix_pretrain: false
+use_batch_index: false
+epochs: 200
+
+# DataSet and Loader args
+condition_key: condition
+max_multiplexing: 2
+exp_batch_key: batch
+delimiter: "+"
+layers: counts
+split_key: split
+batch_size: 32
+
+# epsilon net args
+var_dim: 5000
+time_emb_dim: 128
+n_base_perturbs: 106
+condition_emb_dim: 128
+activation: Mish
+hidden_size:
+- 512
+- 128
+- 512
+
+# sampler args
+scheduler: cosine_beta_schedule
+timesteps: 200
+loss_type: huber
+s: 0.8
