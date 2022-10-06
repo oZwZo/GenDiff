@@ -236,7 +236,10 @@ class Epsilon_Linear(Epsilon_base):
         # define decdoer
         decoder = []
         for input_dim, output_dim in zip(decoder_dims[:-1], decoder_dims[1:]):
-            decoder.append((f'linear_{i}', nn.Linear(input_dim, output_dim)))
+            decoder += [
+                (f'linear_{i}', nn.Linear(input_dim, output_dim)),
+                (f'BatchNorm_{i}', nn.BatchNorm1d(output_dim)),
+            ]
             if i < len(decoder_dims):
                 decoder.append((f'{activation}_{i}', self.act_fn()))
             else:
@@ -352,6 +355,7 @@ class Epsilon_LinearAttn(Epsilon_base):
         # encoder attention block
         i = 1
         encoder = [(f'Input_fc_0',nn.Linear(self.input_dim, hidden_size[0])), 
+                    (f'BatchNorm_0', nn.BatchNorm1d(hidden_size[0])),
                     (f'{activation}_0', self.act_fn())]
         
         for input_dim, output_dim in zip(encoder_dims[:-1], encoder_dims[1:]):
