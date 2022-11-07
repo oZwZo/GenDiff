@@ -1,3 +1,6 @@
+import os
+import torch
+from torch import optim
 import os, sys, math
 import numpy as np
 import torch
@@ -5,65 +8,13 @@ from torch import nn, einsum
 from torch.nn.modules import activation
 import torch.nn.functional as F
 from turtle import forward
+from tqdm import tqdm
 from typing import Union, Optional
 from einops import rearrange
 from collections import OrderedDict
-from tqdm import tqdm
+import pytorch_lightning as pl
+from  _sampler import linear_beta_schedule, quadratic_beta_schedule, sigmoid_beta_schedule, cosine_beta_schedule
 
-                            
-#  ,--.            ,--.              
-#  |  |-.  ,---. ,-'  '-. ,--,--.    
-#  | .-. '| .-. :'-.  .-'' ,-.  |    
-#  | `-' |\   --.  |  |  \ '-'  |    
-#   `---'  `----'  `--'   `--`--'    
-                                  
-def linear_beta_schedule(timesteps,
-                         beta_start : float = 0.0001 ,
-                         beta_end : float = 0.02,
-                        ):
-    r"""
-    basic beta sheduler , the scale of noise increase linearly
-    :param timesteps: int, the total q_sampling steps  $T$
-    """
-    return torch.linspace(beta_start, beta_end, timesteps)
-
-def quadratic_beta_schedule(timesteps,
-                         beta_start : float = 0.0001 ,
-                         beta_end : float = 0.02,
-                        ):
-    r"""
-    :param timesteps: int, the total q_sampling steps  $T$
-    """
-    return torch.linspace(beta_start**0.5, beta_end**0.5, timesteps)**2
-
-def sigmoid_beta_schedule(timesteps,
-                         beta_start : float = 0.0001 ,
-                         beta_end : float = 0.02,
-                        ):
-    r"""
-    the beta increase in a sigmoid scale
-    """
-    beta_range = beta_end - beta_start
-    x = torch.linspace(-6, 6, timesteps)
-    scaler = torch.sigmoid(x)
-    return  scaler * beta_range + beta_start
-
-def cosine_beta_schedule(timesteps, s=0.08):
-    r"""
-    https://arxiv.org/abs/2102.09672
-    """
-    n_steps = timesteps + 1
-    x = torch.linspace(0, timesteps, n_steps) # [0, timesteps]
-    scaled_x = x / timesteps
-    alphas_cumprod = torch.cos( 0.5 * torch.pi * ( (scaled_x + s) / (1 + s) ) ) ** 2
-    
-    # alphas_cumprod[0] is the max value after cos
-    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])  
-
-    # upper bound and lower bound to stable the values
-    betas_clipped = torch.clip(betas, 0.0001, 0.9999) 
-    return  betas_clipped
 
 
 #                                               __         
@@ -73,7 +24,7 @@ def cosine_beta_schedule(timesteps, s=0.08):
 #                                     /_/                  
 
 
-class DiffusionSampler_base(object):
+class DiffusionSampler_base(pl.LightningModule):
     r"""
     base sampler algorithm
 
@@ -83,6 +34,7 @@ class DiffusionSampler_base(object):
         :param model: is the model to predict noise $\epsilon_\text{cond}(x_t, c)$
         """
         super().__init__()
+        self.save_hyperparameters(ignore=['model'])
         self.model = model # epsilon_theta 
         self.total_timestep = timesteps
         scheduler_class = eval(scheduler)
@@ -95,6 +47,7 @@ class DiffusionSampler_base(object):
                         "huber" : nn.SmoothL1Loss()}
         self.loss_fn = loss_fn_set[loss_type]
 
+        self.metric_func = {"loss":self.loss_fn}
     
     def _compute_alphas(self):
         r"""
@@ -119,6 +72,12 @@ class DiffusionSampler_base(object):
         batch_size = t.shape[0]
         out = a.gather(-1, t.cpu())
         return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(t.device)
+
+    def configure_optimizers(self):
+        lr = 1e-3
+
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        return optimizer
 
     def q_sample(self, x_0, t, noise=None):
         # TO be covered by child class
@@ -211,22 +170,108 @@ class DiffusionSampler_base(object):
     def sample(self, *args, **kwargs):
         return self.p_sample_loop(*args, **kwargs)
 
-    def get_eps(self, x_t, t, batch , c, *args, **kwargs):
+    def forward(self, x_t, t, batch , c, *args, **kwargs):
         return self.model(x_t, t, batch , c, *args, **kwargs)
     
     def p_loss(self, x_0, t, noise=None,  batch=None, c=None, *args, **kwargs):
         r"""
-        loss function
         :math: $\mathbf{\epsilon} - \mathbf{\epsilon}_\theta(\mathbf{x}_t, t) \|^2$
         """
-        if noise is None:
+        if len(noise) == 0:
             noise = torch.randn_like(x_0)
 
         x_t = self.q_sample(x_0, t, noise)
-        eps_pred = self.get_eps(x_t, t, batch , c, *args, **kwargs)
+        eps_pred = self.forward(x_t, t, batch , c, *args, **kwargs)
 
         loss = self.loss_fn(noise, eps_pred)
         return loss
+    
+    def training_step(self, train_batch, batch_idx):
+        # get data from batch
+        x_0, exp_batch, c, noise, t = train_batch
+        if len(exp_batch) == 0:
+            exp_batch = None
+
+        device = x_0.device
+        if len(t) == 0:
+            t = torch.randint(0, self.total_timestep-1, (x_0.shape[0], ), device=device).long()
+
+        if len(noise) == 0:
+            noise = torch.randn_like(x_0)
+
+        loss = self.p_loss(x_0, t, noise,  exp_batch, c)
+        self.log('train_loss', loss)
+        return loss
+    
+    def _shared_eval_step(self, x, t, batch , c, noise, metric_func, *args, **kwargs):
+
+        # get data from batch
+        device = x.device
+        
+        if len(noise) == 0:
+            noise = torch.randn_like(x)
+
+        device = x.device
+        x_t = self.q_sample(x, t, noise)
+        eps_pred = self.forward(x_t, t, batch , c, *args, **kwargs)
+
+        metrics = {}
+        for key,func in metric_func.items():
+            metrics[key] = func(noise, eps_pred)
+
+        return metrics
+    
+    
+    def validation_step(self, val_batch, batch_idx):
+        # loss over many time
+
+        x_0, batch, c, noise, t = val_batch
+        if len(batch) == 0:
+            batch = None
+
+        if len(t) == 0:
+            metric_records = {k:[] for k in self.metric_func}
+
+            for t in range(0, self.total_timestep, 2):
+                t = torch.full((x_0.shape[0],), t, device=x_0.device).long()
+                metric_t = self._shared_eval_step(x_0, t, batch , c, noise, self.metric_func)
+
+                for k, v in metric_t.items():
+                    metric_records[k].append(v.detach().cpu().numpy())
+            metrics = {"val_%s"%k:np.mean(v) for k,v in metric_records.items()} # take the mean
+        else:
+            metrics = self._shared_eval_step(x_0, t, batch , c, noise, self.metric_func)
+        
+        metrics["t_MaxError"] = np.argmax(metric_records["loss"])
+
+        self.log_dict(metrics)
+        return metrics
+
+    def test_step(self, test_batch, batch_idx):
+        # loss over many time
+
+        x_0, batch, c, noise, t = test_batch
+        if len(batch) == 0:
+            batch = None
+
+        if len(t) == 0:
+            #if t is an empty list, t is not specific to x, c, so we evaluate
+            metric_records = {k:[] for k in self.metric_func}
+            for t in range(0, self.total_timestep, 2):
+                t = torch.full((x_0.shape[0],), t, device=x_0.device).long()
+                metric_t = self._shared_eval_step(x_0, t, batch , c, noise, self.metric_func)
+
+                for k, v in metric_t.items():
+                    metric_records[k].append(v)
+            metrics = {"test_%s"%k:torch.mean(v) for k,v in metric_records.items()} # take the mean
+        else:
+            metrics = self._shared_eval_step(x_0, t, batch , c, noise, self.metric_func)
+        metrics["t_MaxError"] = torch.argmax(metric_records["loss"])
+        
+        self.log_dict(metrics)
+        return metrics
+
+
 
 #                          ___    ___    ___    __  ___
 #                         / _ \  / _ \  / _ \  /  |/  /
@@ -264,7 +309,7 @@ class DDPM_Sampler(DiffusionSampler_base):
         :param t: torch.Tensor, a list of different time points to sample, time point specific to mini-batch
         :param noise: torch.Tensor, default None, the same shape as `x_0`, a specified noise
         """
-        if noise is None:
+        if len(noise) == 0:
             noise = torch.randn_like(x_0)
 
         sqrt_a_bar_t = self.extract(self.sqrt_a_bar, t , x_0.shape)
@@ -323,7 +368,7 @@ class DDPM_reconX(DDPM_Sampler):
 
         # variancce
         sigma_t = self.extract( self.sigma, t, x_t.shape )
-        noise = torch.randn_like(x_t) if noise is None else noise
+        noise = torch.randn_like(x_t) if len(noise) == 0 else noise
         reparam_var = torch.sqrt(sigma_t) * noise
 
         # X_{t-1}
@@ -335,130 +380,30 @@ class DDPM_reconX(DDPM_Sampler):
         loss function
         :math: $\mathbf{\epsilon} - \mathbf{\epsilon}_\theta(\mathbf{x}_t, t) \|^2$
         """
-        if noise is None:
+        if len(noise) == 0:
             noise = torch.randn_like(x_0)
 
         x_t = self.q_sample(x_0, t, noise)
         x_t_plus = self.q_sample(x_0, t+1, noise)
-        x_recon = self.get_eps(x_t_plus, t, batch , c, *args, **kwargs)
+        x_recon = self.forward(x_t_plus, t, batch , c, *args, **kwargs)
 
         loss = self.loss_fn(x_t, x_recon)
         return loss
     
+    def _shared_eval_step(self, x, t, batch , c, noise, metric_func, *args, **kwargs):
 
-#                         ___    ___    ____  __  ___
-#                        / _ \  / _ \  /  _/ /  |/  /
-#                       / // / / // / _/ /  / /|_/ / 
-#                      /____/ /____/ /___/ /_/  /_/  
-
-class DDIM_Sampler(DiffusionSampler_base):
-    r"""
-    Sampler for Denoising Diffusion Implicit Model 
-    https://papers.labml.ai/paper/2010.02502
-
-    Some of the code is editted from 
-    https://nn.labml.ai/diffusion/stable_diffusion/sampler/ddim.html
-    """
-    def __init__(self, 
-                 model, 
-                 eta : float,
-                 discretize:str='linear', 
-                 timesteps=200, 
-                 loss_type = 'huber',
-                 **scheduler_kwargs):
-        # ignore input scheduler
-        super().__init__( model, "quadratic_beta_schedule", timesteps, loss_type, **scheduler_kwargs)
-
-        self.discretize = discretize
-        self.eta = eta
-        self._get_discrete_time()
-        self._compute_alphas()
-        self._compute_ddim_alphas()
-
-        # calculations for posterior q(x_{t-1} | x_t, x_0)
-        self.sigma = self.eta * \
-                        torch.sqrt((1-self.a_prev)/(1-self.alphas)) * \
-                        torch.sqrt(1 - (self.alphas/self.a_prev))
-
-
-    def _get_discrete_time(self):
-        self.total_timestep
-        if self.discretize == 'linear':
-            self.time_steps = np.asarray(list(range(0, self.total_timestep, 1))) + 1
-        elif self.discretize == 'quadratic':
-            linear_step = np.linspace(0, np.sqrt(self.total_timestep * .8), self.total_timestep)
-            self.time_steps = (linear_step ** 2).astype(int) + 1
-        else:
-            raise ValueError("`discretize` should be either 'linear' or 'quadratic'")
-
-
-    def _compute_ddim_alphas(self):
-        r"""
-        cover some of the alphas
-        """
-        self.betas = nn.parameter.Parameter(self.betas.to(torch.float32), requires_grad=False)
-        alpha_bar = nn.parameter.Parameter(self.a_bar.to(torch.float32), requires_grad=False)
+        # get data from batch
+        device = x.device
         
-        # $a_t = \bar{\alpha}_t$ for DDIM
-        DDIM_alpha = alpha_bar[self.time_steps].clone().to(torch.float32)
-        self.alphas = DDIM_alpha
-        self.sqrt_a  = torch.sqrt(self.alphas)
-        del self.sqrt_a_bar  # remove the same item iherit from base class
+        if len(noise) == 0:
+            noise = torch.randn_like(x)
 
-        #a_{t-1}
-        self.a_prev = torch.cat([alpha_bar[0:1], alpha_bar[self.time_steps[:-1]]])
-        #√1-a
-        self.sqrt_1_a = torch.sqrt(1 - self.alphas)
+        device = x.device
+        x_t = self.q_sample(x, t, noise)
+        eps_pred = self.forward(x_t, t, batch , c, *args, **kwargs)
 
-    
-    def q_sample(self, x_0: torch.Tensor, t:int, noise: Optional[torch.Tensor] = None):
-        r"""
-        the same as DDPM q_sampling
+        metrics = {}
+        for key,func in metric_func.items():
+            metrics[key] = func(x_t, eps_pred) # this one is different
 
-        :math:`\sqrt{\bar{\alpha}_t} \mathbf{x}_0 + \sqrt{(1- \bar{\alpha}_t)  } \mathbf{\epsilon}`
-        :math:`q(\mathbf{x}_t | \mathbf{x}_0) = \cal{N}(\mathbf{x}_t; \sqrt{\bar{\alpha}_t} \mathbf{x}_0, (1- \bar{\alpha}_t) \mathbf{I})`
-
-        Params
-        ------------
-        :param x_0: torch.Tensor, the clean matrix
-        :param t: torch.Tensor, a list of different time points to sample, time point specific to mini-batch
-        :param noise: torch.Tensor, default None, the same shape as `x_0`, a specified noise
-        """
-        if noise is None:
-            noise = torch.randn_like(x_0)
-        
-        ddim_sqrt_a_t = self.extract(self.sqrt_a, t, x_0.shape)
-        ddim_sqrt_1_a_t = self.extract(self.sqrt_1_a, t, x_0.shape)
-
-        x_t = x_0 * ddim_sqrt_a_t + noise * ddim_sqrt_1_a_t
-
-        return x_t
-
-    
-    @torch.no_grad()
-    def p_sample(self, x_t, t, noise=None,  batch=None, c=None, no_var=False, *args, **kwargs):
-        r"""
-        the DDIM sampling $x_{t} , \hat{x}_0 -> x_{t-1]$
-        :math:`x_{t-1} = \sqrt{\alpha_t -1}\hat{x_0} + \sqrt{1 - \alpha_{t-1} - \sigma_t^2} \cdot \epsilon_{\theta}^(t)(x_t) + \sigma_t \epsilon_t`
-        :math:`\hat{x}_0 = \frac{x_t - \sqrt{1-\alpha_t} \epsilon_{\theta} (x-t)}{\sqrt{\alpha_t}}`
-        """
-        if noise is None:
-            noise = torch.randn_like(x_t) # \epsilon_t
-
-        a_prev_t = self.extract(self.a_prev, t, x_t.shape)
-        a_t = self.extract(self.alphas, t, x_t.shape)
-        sqrt_1_a_t = self.extract(self.sqrt_1_a, t, x_t.shape)
-        sigma_t = self.extract(self.sigma, t, x_t.shape)
-
-        eps_pred = self.get_eps(x_t, t, batch, c)    # \epsilon_{\theta}(x, t)
-        x_0_pred = (x_t - sqrt_1_a_t * eps_pred) / torch.sqrt(a_t)  # \hat{x}_0
-
-        dift = torch.sqrt(1 - a_prev_t - sigma_t**2 ) * eps_pred 
-
-        x_t_1 = torch.sqrt(a_prev_t) * x_0_pred + dift + sigma_t * noise # x_{t-1} 
-
-        if no_var:
-            # the last step 
-            return torch.sqrt(a_prev_t) * x_0_pred + dift
-        else:
-            return x_t_1
+        return metrics
