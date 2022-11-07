@@ -63,7 +63,15 @@ class AnnDataSet(Dataset):
         super().__init__()
         
         self.adata = AnnData[AnnData.obs[split_key]==which_set].copy()
-        self.X = self.adata.layers[layers]
+
+        if layers in self.adata.layers:
+            self.X = self.adata.layers[layers]
+        elif layers in self.adata.obsm_keys():
+            self.X = self.adata.obsm[layers]
+        elif layers == 'X':
+             self.X = self.adata.X
+        else:
+            raise KeyError(f"no data was matched with key {layers}")
         
         # check matrix type
         self.sparse_input = (str(type(self.X)) == "<class 'scipy.sparse.csr.csr_matrix'>")
@@ -176,13 +184,107 @@ class Condition_AnnDataSet(AnnDataSet):
 
         if self.use_batch_index:
             batch_idx = self.exp_batch[i]
-            return exp_mat, batch_idx, condition_idx
+        
         else:
-            return exp_mat, condition_idx
+            batch_idx=[]
+
+        return exp_mat, batch_idx, condition_idx, [], [] # noise and t is empty
 
         
+class Diffuse_Dataset(Condition_AnnDataSet):
+    def __init__(self, 
+                AnnData : AnnData, 
+                unique_token_dict : dict,
+                condition_key : str = 'condition',
+                max_multiplexing : int = 1,
+                use_batch_index : bool = False,
+                exp_batch_key : str = 'batch', 
+                pseudotime_key : str = "dpt_pseudotime",
+                neighbor_key : str = "",
+                n_neighbor : int = 90,
+                delimiter : str ="",
+                layers:str ='counts', 
+                split_key:str = 'split', 
+                which_set: str ='train'):
+        super().__init__(AnnData, unique_token_dict, condition_key,max_multiplexing, 
+                            use_batch_index, exp_batch_key, layers, split_key, which_set)
         
+        self.k = n_neighbor
+        self.pseudotime_key = pseudotime_key
+        self.connectivities = self.adata.obsp[neighbor_key+'connectivities']
+        self.distance = self.adata.obsp[neighbor_key+'distances']
+
+    @property
+    def T(self):
+        """
+        generate discreted timepoint from pseudo-time
+        """
+        if "discrete_time" not in self.adata.obs_keys():
+            def discrete_time(x):
+                x = int(x*250)
+                mid_err = np.random.randint(-2,2) # smooth the time
+                tail_err = np.random.randint(0,10)
+                return min(max(0,x+mid_err), 200-tail_err)
+
+            self.adata.obs['discrete_time'] = self.adata.obs[self.pseudotime_key].apply(discrete_time)
+
+        return self.adata.obs['discrete_time'].values
+
+    def _diffuse_neighbor(self, i, c_i, t_i):
+        """
+        the Key function defines the noise sampling process 
+        given the starting point i
+        """
+        knn_idx = np.argpartition(self.self.connectivities[i], -30)[-30:]
+        # 1 : neighbor with the same condition
+        knn_c = self.multipx_conditions[knn_idx]
+        if c_i in knn_c:
+            pass_1_idx = knn_idx[knn_c == c_i]
+        else:
+            pass_1_idx = knn_idx
+
+        # 2 : neighbor with bigger pseudo-time
+        knn_t = self.T[pass_1_idx]
+        if np.any(knn_t > t_i):
+            pass_2_idx = pass_1_idx[knn_t > t_i]
+        else:
+            pass_2_idx = pass_1_idx
         
+        # sampled by distance
+        knn_p = self.connectivities[i,pass_2_idx]
+        p = knn_p / knn_p.sum() if knn_p.sum() != 0 else None # normalized
+
+        neighbor_idx = np.random.choice(pass_2_idx, p=p)
+        return neighbor_idx
+
+
+    def __getitem__(self, i):
+        """
+        return x , b, c, t, noise
+        """
+        exp_mat = self.X[i]
+        c_string = self.multipx_conditions[i]
+        split_tokens = c_string.split(self.delimiter)
+        n_tokens = len(split_tokens)
+
+        # we pad the token list to maximal muultiplexing 
+        # pad with the null key 
+        if len(split_tokens) < self.max_multiplexing:
+            split_tokens += [self.null_cond_key]*(self.max_multiplexing - n_tokens)
+
+        condition_idx = np.array([self.unique_token_dict[token] for token in split_tokens])
+
+        if self.use_batch_index:
+            batch_idx = self.exp_batch[i]
+        
+        else:
+            batch_idx=[]
+
+        t = self.T[i]
+        neighbor_idx  = self._diffuse_neighbor(i, c_string, t)
+        noise = self.X[neighbor_idx] - exp_mat
+        return exp_mat, batch_idx, condition_idx, noise, t
+    
 
 
 
