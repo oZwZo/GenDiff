@@ -77,6 +77,8 @@ class AnnDataSet(Dataset):
         self.sparse_input = (str(type(self.X)) == "<class 'scipy.sparse.csr.csr_matrix'>")
         if self.sparse_input:
             self.X = np.asarray(self.X.todense())
+        
+        self.X = torch.from_numpy(self.X).float()
     
     def __len__(self):
         return self.adata.shape[0]
@@ -132,7 +134,7 @@ class Condition_AnnDataSet(AnnDataSet):
 
     def __init__(self, 
                 AnnData : AnnData, 
-                unique_token_dict : dict,
+                unique_token_dict : Union[dict, str],
                 condition_key : str = 'condition',
                 max_multiplexing : int = 2,
                 use_batch_index : bool = False,
@@ -145,8 +147,11 @@ class Condition_AnnDataSet(AnnDataSet):
 
         # store the attribute
         # process the token bag and check their uni-mapping
-        self.unique_token_dict = unique_token_dict
-        self.reverse_token = {v:k for k,v in unique_token_dict.items()}
+        if type(unique_token_dict) == str:
+            self.unique_token_dict = self.adata.uns[unique_token_dict]
+        elif type(unique_token_dict) == dict:
+            self.unique_token_dict = unique_token_dict
+        self.reverse_token = {v:k for k,v in self.unique_token_dict.items()}
         self.n_base_perturbs = len(self.reverse_token)
         self.null_cond_key = self.reverse_token[0]
         
@@ -207,7 +212,7 @@ class Diffuse_Dataset(Condition_AnnDataSet):
                 split_key:str = 'split', 
                 which_set: str ='train'):
         super().__init__(AnnData, unique_token_dict, condition_key,max_multiplexing, 
-                            use_batch_index, exp_batch_key, layers, split_key, which_set)
+                            use_batch_index, exp_batch_key, delimiter, layers, split_key, which_set)
         
         self.k = n_neighbor
         self.pseudotime_key = pseudotime_key
@@ -235,7 +240,7 @@ class Diffuse_Dataset(Condition_AnnDataSet):
         the Key function defines the noise sampling process 
         given the starting point i
         """
-        knn_idx = np.argpartition(self.self.connectivities[i], -30)[-30:]
+        knn_idx = np.argpartition(self.connectivities[i], -30)[-30:]
         # 1 : neighbor with the same condition
         knn_c = self.multipx_conditions[knn_idx]
         if c_i in knn_c:
@@ -260,7 +265,7 @@ class Diffuse_Dataset(Condition_AnnDataSet):
 
     def __getitem__(self, i):
         """
-        return x , b, c, t, noise
+        return x , b, c, noise, t in a mini-batch
         """
         exp_mat = self.X[i]
         c_string = self.multipx_conditions[i]

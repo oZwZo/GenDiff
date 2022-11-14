@@ -129,6 +129,8 @@ class Epsilon_base(nn.Module):
                 X = torch.concat([x, time_emb, batch_tensor], dim=-1)
             else:
                 X = torch.concat([x, time_emb], dim=-1)
+        else:
+            X = torch.concat([x, time_emb, batch], dim=-1)
 
         
         input_dict = {"full_input":X, "time_point":time_emb, "batch":None, "condition":c_emb}

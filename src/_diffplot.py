@@ -23,7 +23,7 @@ from matplotlib.colors import Normalize
 #   - device -
 def reload_sampler(yaml_file):
     # define configure
-    configs = _configure.Json_configurer(yaml_file)
+    configs = _configure.Yaml_configurer(yaml_file)
     module_kw = configs.epsilon_kwargs
     Module_Class = eval("_epsilon_module.%s" %configs.epsilon_class)
 

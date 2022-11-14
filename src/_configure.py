@@ -2,7 +2,7 @@ import os, sys
 import yaml
 import _sampler, _epsilon_module
 
-class Json_configurer(object):
+class Yaml_configurer(object):
     def __init__(self, config_file_path):
         assert os.path.exists(config_file_path)
 
@@ -22,9 +22,11 @@ class Json_configurer(object):
     def dataset_kwargs(self):
         # None of the args should be `None`
         attr_list = [
-            "condition_key", "max_multiplexing", "use_batch_index",
+            "unique_token_dict", "condition_key", "max_multiplexing", "use_batch_index",
             "exp_batch_key", "delimiter", "layers", "split_key",
         ]
+        if self.dataset_class == "Diffuse_Dataset":
+            attr_list += ["unique_token_dict", "pseudotime_key", "n_neighbor"]
         return  {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}
 
     @property

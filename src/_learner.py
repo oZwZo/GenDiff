@@ -239,11 +239,11 @@ class DiffusionSampler_base(pl.LightningModule):
                 for k, v in metric_t.items():
                     metric_records[k].append(v.detach().cpu().numpy())
             metrics = {"val_%s"%k:np.mean(v) for k,v in metric_records.items()} # take the mean
+            metrics["t_MaxError"] = np.argmax(metric_records["loss"])
         else:
             metrics = self._shared_eval_step(x_0, t, batch , c, noise, self.metric_func)
+            metrics = {"val_%s"%k:v for k,v in metrics.items()}
         
-        metrics["t_MaxError"] = np.argmax(metric_records["loss"])
-
         self.log_dict(metrics)
         return metrics
 
@@ -264,9 +264,9 @@ class DiffusionSampler_base(pl.LightningModule):
                 for k, v in metric_t.items():
                     metric_records[k].append(v)
             metrics = {"test_%s"%k:torch.mean(v) for k,v in metric_records.items()} # take the mean
+            metrics["t_MaxError"] = torch.argmax(metric_records["loss"])
         else:
             metrics = self._shared_eval_step(x_0, t, batch , c, noise, self.metric_func)
-        metrics["t_MaxError"] = torch.argmax(metric_records["loss"])
         
         self.log_dict(metrics)
         return metrics
@@ -407,3 +407,71 @@ class DDPM_reconX(DDPM_Sampler):
             metrics[key] = func(x_t, eps_pred) # this one is different
 
         return metrics
+
+
+
+
+
+
+class Equivalent_Diffuse_Sampler(DiffusionSampler_base):
+    r"""
+    (improved) Denoising deffusion probabilistic model 
+
+    """
+    def __init__(self, model : nn.Module,
+                       scheduler: str, 
+                       loss_type : str, 
+                       timesteps=200, 
+                       **scheduler_kwargs):
+        super().__init__(model, scheduler, timesteps, loss_type,  **scheduler_kwargs)
+
+        # calculations for posterior q(x_{t-1} | x_t, x_0)
+        self.sigma = self.betas * (1. - self.a_bar_prev) / (1. - self.a_bar)
+        
+        # define loss
+    
+    def q_sample(self, x_0, t, noise=None):
+        return x_0 - noise
+
+    @torch.no_grad()
+    def p_sample(self, x_t, t, noise=None,  batch=None, c=None, no_var=False, *args, **kwargs):
+        r"""
+        $x_{t}$ -> $x_{t-1}$ ; take one reverse denoising step
+        """
+        # mean
+        eps_theta = self.model(x_t, t, batch, c, *args, **kwargs)
+        return x_t + eps_theta
+    
+    def _shared_step(self, x, t, batch , c, noise, metric_func, *args, **kwargs):
+
+        # get data from batch
+        if len(noise) == 0:
+            noise = torch.randn_like(x)
+
+        eps_pred = self.forward(x, t, batch , c, *args, **kwargs)
+
+        metrics = {}
+        for key,func in metric_func.items():
+            metrics[key] = func(noise, eps_pred)
+
+        return metrics
+    
+    def training_step(self, train_batch, batch_idx):
+        # get data from batch
+        x_0, exp_batch, c, noise, t = train_batch
+        if len(exp_batch) == 0:
+            exp_batch = None
+
+        device = x_0.device
+        if len(t) == 0:
+            t = torch.randint(0, self.total_timestep-1, (x_0.shape[0], ), device=device).long()
+
+        if len(noise) == 0:
+            noise = torch.randn_like(x_0)
+
+        metrics = self._shared_step(x_0, t,  exp_batch, c, noise, self.metric_func)
+        train_metrics = {"train_%s"%k:v for k,v in metrics.items()}
+
+        self.log_dict(train_metrics)
+        return metrics['loss']
+
