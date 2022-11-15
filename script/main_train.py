@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from functools import partial
 from src import _sampler, _epsilon_module, _helper_net, _sampler, _reader, _configure
 
-configs = _configure.Json_configurer(args.model_config)
+configs = _configure.Yaml_configurer(args.model_config)
                
 
 #                   _                          
@@ -32,11 +32,11 @@ unique_token = ['ctrl'] + unique_token
 unique_token_dict = {token:i for i, token in enumerate(unique_token)}
 
 # - DataSet - 
-ds_fn = partial(_reader.Condition_AnnDataSet, adata, unique_token_dict, **configs.dataset_kwargs())
+ds_fn = partial(_reader.Condition_AnnDataSet, adata, unique_token_dict, **configs.dataset_kwargs)
 AnDatasets = (ds_fn(which_set=s) for s in ['train','test','ood'])
 # - DataLoader - 
 dl_fn = partial(DataLoader, batch_size=configs.batch_size, shuffle=True)
-train_loader, val_loader, test_loader = (dl_fn(Dataset=ds) for ds in AnDatasets)
+train_loader, val_loader, test_loader = (dl_fn(ds) for ds in AnDatasets)
 
 
 ##             |\/|  _   _|     |  _           ##
@@ -44,12 +44,12 @@ train_loader, val_loader, test_loader = (dl_fn(Dataset=ds) for ds in AnDatasets)
 
 # - device -
 if torch.cuda.is_available():
-    device = torch.device("cuda:%d"%args.CUDA)
+    device = torch.device("cuda:%s"%args.CUDA)
 else:
     device = torch.device('cpu')
 
-module_kw = configs.module_kwargs()
-Module_Class = eval("_epsilon_module.%s" %configs.module_class)
+module_kw = configs.epsilon_kwargs
+Module_Class = eval("_epsilon_module.%s" %configs.epsilon_class)
 
 # - pretrain - 
 if configs.pretrain_embedder_pth is not None:
@@ -64,7 +64,7 @@ if configs.pretrain_embedder_pth is not None:
 eps_net = Module_Class(**module_kw).to(device)
 
 # - optimizer -
-optimizer = optim.Adam(eps_net.parameters())
+optimizer = optim.Adam(eps_net.parameters(), lr=configs.lr)
 
 
 
@@ -74,10 +74,10 @@ optimizer = optim.Adam(eps_net.parameters())
 #                           |                    #
 
 Samper_Class = eval("_sampler.%s" %configs.sampler_class)
-sampler_kwargs = configs.sampler_kwargs()
+sampler_kwargs = configs.sampler_kwargs
 sampler_kwargs['model'] = eps_net
 
-Sampler = Samper_Class(**module_kw)
+Sampler = Samper_Class(**sampler_kwargs)
 
 #
 #
@@ -103,17 +103,18 @@ for epoch in range(configs.epochs):
         c = c.to(device)
         
         # Algorithm 1 line 3: sample t uniformally for every example in the batch
-        T_b = torch.randint(0, configs.timesteps, (configs.batch_size, ), device=device).long()
+        T_b = torch.randint(0, configs.timesteps-1, (X.shape[0], ), device=device).long()
         
-        loss = Sampler.p_losses(eps_net,  T_b, loss_type='huber')
+        loss = Sampler.p_loss(X,  T_b,  batch=exp_batch, c=c)
         
-        if step %100 == 0:
+        if step %500 == 0:
             logging.info("\tLoss:%.6f" % loss.item())
         
         loss.backward()
         optimizer.step()
     
     # val
+    logging.info("=======    {val %d}    =======" %epoch)
     eps_net.eval()
     with torch.no_grad():
         all_loss = []
@@ -131,16 +132,17 @@ for epoch in range(configs.epochs):
             c = c.to(device)
             
             L = []
-            for t in range(0, configs.timesteps, 20):
-                T_b = torch.full((configs.batch_size,), t, device=device).long()
-                L.append(Sampler.p_losses(eps_net,  T_b, loss_type='huber'))
-            loss = np.mean(L.cpu().numpy())
+            for t in range(0, configs.timesteps, 2):
+                T_b = torch.full((X.shape[0],), t, device=device).long()
+                l_t = Sampler.p_loss(X,  T_b,  batch=exp_batch, c=c)
+                L.append(l_t.cpu().numpy())
+            loss = np.mean(L)
             all_loss.append(loss)
-            logging.info("=======    {val %d}    =======" %epoch)
-            logging.info("\tLoss:%.6f" % np.mean(all_loss).item())
-
+            
+        logging.info("\tLoss:%.6f" % np.mean(all_loss).item())
         if best_loss > np.mean(all_loss):
-            all_loss = all_loss
+            best_loss = np.mean(all_loss)
 
-            model_pth = os.path.join(path_n_util.pth_dir , configs.model_class, args.model_config.replace(".yaml",".pth"))
+            model_pth = os.path.join(path_n_util.pth_dir , configs.epsilon_class, 
+                            os.path.basename(args.model_config).replace(".yaml",".pth"))
             torch.save(eps_net, model_pth)
