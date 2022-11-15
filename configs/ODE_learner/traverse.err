@@ -1,0 +1,18 @@
+nohup: ignoring input and appending output to 'nohup.out'
+Auto select gpus: [2]
+GPU available: True, used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Missing logger folder: /data/users/wergillius/diffuse_differentiate/ODE_learner/ODE_eps_traverse/lightning_logs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+
+  | Name    | Type         | Params
+-----------------------------------------
+0 | model   | NeuralODE    | 2.3 M 
+1 | loss_fn | SmoothL1Loss | 0     
+-----------------------------------------
+2.3 M     Trainable params
+0         Non-trainable params
+2.3 M     Total params
+9.165     Total estimated model params size (MB)
