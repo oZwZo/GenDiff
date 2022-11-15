@@ -1,20 +1,19 @@
-from distutils.command.config import config
 import os, path_n_util
-parser = path_n_util.main_train_parser()
-args = parser.parse_args()
-os.environ['CUDA VISIBLE DEVICES'] = args.CUDA
-import logging
-import torch
-from torch import nn
-from torch import optim
-import numpy as np
+if __name__ == '__main__':
+    parser = path_n_util.main_train_parser()
+    args = parser.parse_args()
+    os.environ['CUDA VISIBLE DEVICES'] = args.CUDA
+
 import scanpy as sc
-from torchsummary import summary
-from torch.utils.data import DataLoader
-from functools import partial
-from src import _sampler, _epsilon_module, _helper_net, _learner, _reader, _configure
+import torch
 import pytorch_lightning as pl
 from pytorch_lightning import callbacks 
+from torchsummary import summary
+from torch.utils.data import DataLoader
+from torch.utils.data.dataloader import default_collate
+from functools import partial
+from src import _sampler, _epsilon_module, _helper_net, _learner, _reader, _configure
+
 
 
                
@@ -22,7 +21,8 @@ from pytorch_lightning import callbacks
 #                   _                          
 ##                 | \  _. _|_  _.             ##
 ##                 |_/ (_|  |_ (_|             ##
-def dl_from_config(configs):
+
+def dl_from_config(configs, shuffle=True):
     adata = sc.read(configs.anndata_path)
     # TODO: unique_token_dict fun from config
     # adata.obs['pert1'] = adata.obs['condition'].apply(lambda x: x.split("+")[0])
@@ -36,9 +36,16 @@ def dl_from_config(configs):
     # - DataSet - 
     ds_fn = partial(eval(f"_reader.{configs.dataset_class}"), adata,  **configs.dataset_kwargs)
     # AnDatasets = (ds_fn(which_set=s) for s in ['train','test','ood'])
-    AnDatasets = (ds_fn(which_set=s) for s in ['train','val','test'])
+    AnDatasets = [ds_fn(which_set=s) for s in ['train','val','test']]
     # - DataLoader - 
-    dl_fn = partial(DataLoader, batch_size=configs.batch_size, shuffle=True, num_workers=4)
+    def my_collate(batch):
+        "Puts each data field into a tensor with outer dimension batch size"
+        if len(batch[0]) == 8:
+            batch = list( filter (lambda x: x[5] - x[1] == configs.collect_time_span, batch))
+        return default_collate(batch)
+    dl_fn = partial(DataLoader, batch_size=configs.batch_size, 
+                                collate_fn = my_collate,
+                                shuffle=False, num_workers=4)
     train_loader, val_loader, test_loader = (dl_fn(ds) for ds in AnDatasets)
     return train_loader, val_loader, test_loader
 
@@ -49,7 +56,7 @@ def get_model_from_config(configs, cuda):
 
     # - device -
     if torch.cuda.is_available():
-        device = torch.device("cuda:%s"%cuda
+        device = torch.device("cuda:%s"%cuda)
     else:
         device = torch.device('cpu')
 
@@ -94,7 +101,7 @@ if __name__ == '__main__':
     configs = _configure.Yaml_configurer(args.model_config)
 
     train_loader, val_loader, test_loader = dl_from_config(configs)
-    eps_net = get_model_from_config(configs, args.cuda)
+    eps_net = get_model_from_config(configs, args.CUDA)
     Sampler = get_sampler_from_configs(configs, eps_net)
 
 
@@ -105,7 +112,8 @@ if __name__ == '__main__':
             accelerator='gpu', devices=1,
             auto_lr_find=True,
             default_root_dir=log_dir,
-            max_epochs=200, 
+            max_epochs=configs.epochs, 
+            auto_select_gpus = True,
             callbacks=[callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=15)])        
 
     trainer.fit(Sampler, train_loader, val_loader)

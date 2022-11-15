@@ -5,6 +5,7 @@ import os, sys, math
 import numpy as np
 import torch
 from torch import nn, einsum
+from torchdyn.core import NeuralODE
 from torch.nn.modules import activation
 import torch.nn.functional as F
 from turtle import forward
@@ -475,3 +476,64 @@ class Equivalent_Diffuse_Sampler(DiffusionSampler_base):
         self.log_dict(train_metrics)
         return metrics['loss']
 
+
+class ODE_learner(pl.LightningModule):
+    def __init__(self, model:nn.Module, loss_type:str):
+        super().__init__()
+
+        self.model = NeuralODE(model, sensitivity='adjoint', solver='dopri5')
+        loss_fn_set = {"l1" : nn.L1Loss(),
+                        "l2" : nn.MSELoss(),
+                        "huber" : nn.SmoothL1Loss()}
+        self.loss_fn = loss_fn_set[loss_type]
+
+        self.metric_func = {"loss":self.loss_fn}
+
+    def forward(self, x):
+        # x t b c 
+        print(len(x))
+        return self.model(x)
+
+    def training_step(self, batch, batch_idx):
+
+        X_t0, t0, exp_batch, condition_idx, X_t1,  t1, pass_1, pass_2 = batch
+        if len(exp_batch) == 0:
+            exp_batch = None
+        # t_span = t1 - t0
+        t_span = torch.linspace(0,1,10)
+        # model_input = torch.cat([X_t0, t0.reshape(-1,1), condition_idx], axis=1)
+        self.model.vf.vf.vf.c = condition_idx
+        self.model.vf.vf.vf.t0 = t0
+        t_eval, x_hat = self.model(X_t0, t_span) #, args={"t_0":t0, "batch":exp_batch, "c":condition_idx})
+        x_hat = x_hat[-1] # select last point of solution trajectory
+        loss = self.loss_fn(X_t1, x_hat)
+
+        metrics_dict = {'train_loss': loss}
+        # metrics_dict['train_pass1'] = pass_1.mean()
+        # metrics_dict['train_pass2'] = pass_2.mean()
+        self.log_dict(metrics_dict)
+        return {'loss': loss}
+    
+    def validation_step(self, batch, batch_idx):
+
+        X_t0, t0, exp_batch, condition_idx, X_t1,  t1, pass_1, pass_2 = batch
+        if len(exp_batch) == 0:
+            exp_batch = None
+
+        # t_span = t1 - t0
+        t_span = torch.linspace(0,1,10)
+        # model_input = torch.cat([X_t0,  condition_idx], axis=1)
+        self.model.vf.vf.vf.c = condition_idx
+        self.model.vf.vf.vf.t0 = t0
+        t_eval, x_hat = self.model(X_t0, t_span) #, args={"t_0":t0, "batch":exp_batch, "c":condition_idx})
+        x_hat = x_hat[-1] # select last point of solution trajectory
+        loss = self.loss_fn(X_t1, x_hat)
+
+        metrics_dict = {'val_loss': loss}
+        # metrics_dict['val_pass1'] = pass_1.mean()
+        # metrics_dict['val_pass2'] = pass_2.mean()
+        self.log_dict(metrics_dict)
+        return {'loss': loss}
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.model.parameters(), lr=0.01)

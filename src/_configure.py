@@ -1,6 +1,5 @@
 import os, sys
 import yaml
-import _sampler, _epsilon_module
 
 class Yaml_configurer(object):
     def __init__(self, config_file_path):
@@ -25,8 +24,8 @@ class Yaml_configurer(object):
             "unique_token_dict", "condition_key", "max_multiplexing", "use_batch_index",
             "exp_batch_key", "delimiter", "layers", "split_key",
         ]
-        if self.dataset_class == "Diffuse_Dataset":
-            attr_list += ["unique_token_dict", "pseudotime_key", "n_neighbor"]
+        if self.dataset_class in ["Diffuse_Dataset", "ODE_dataset"]:
+            attr_list += ["unique_token_dict", "pseudotime_key", "n_neighbor", "max_degree", "search_strategy"]
         return  {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}
 
     @property
@@ -37,7 +36,7 @@ class Yaml_configurer(object):
             "use_batch_index", "activation"]
         
         # specific params
-        if self.epsilon_class == "Epsilon_Linear":
+        if self.epsilon_class in ["Epsilon_Linear", "ODE_eps"]:
             attr_list.append("hidden_size")
         elif self.epsilon_class == "Epsilon_LinearAttn":
             attr_list += ['hidden_size', 'qk_dimension', 'n_heads']
@@ -56,5 +55,8 @@ class Yaml_configurer(object):
             if (attr in self.config_dict.keys()):
                 if self.config_dict[attr] is not None:
                     attr_list.append(attr)
+        
+        if self.sampler_class in ['ODE_learner']:
+            attr_list = ['loss_type']
 
         return {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}

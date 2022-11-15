@@ -87,7 +87,7 @@ class Epsilon_base(nn.Module):
 
 
         if isinstance(activation, str):
-            assert(activation in dir(nn.modules.activation), "invalid activation function")
+            # assert(activation in dir(nn.modules.activation), "invalid activation function")
             self.act_fn = eval(f"nn.modules.activation.{activation}" )
         else:
             self.act_fn = activation() # if  callable nn Module
@@ -126,11 +126,11 @@ class Epsilon_base(nn.Module):
         if batch is None:
             if self.use_batch_index:
                 batch_tensor = torch.Tensor([0]).long()
-                X = torch.concat([x, time_emb, batch_tensor], dim=-1)
+                X = torch.cat([x, time_emb, batch_tensor], dim=-1)
             else:
-                X = torch.concat([x, time_emb], dim=-1)
+                X = torch.cat([x, time_emb], dim=-1)
         else:
-            X = torch.concat([x, time_emb, batch], dim=-1)
+            X = torch.cat([x, time_emb, batch], dim=-1)
 
         
         input_dict = {"full_input":X, "time_point":time_emb, "batch":None, "condition":c_emb}
@@ -256,9 +256,38 @@ class Epsilon_Linear(Epsilon_base):
         
         # time embeddings
 
-    def forward(self, x, t, batch = None, c = None):
+    def forward(self, x_0, t_0, batch = None, c = None):
         # input
-        input_dict= self._get_model_input(x, t, batch, c)
+        input_dict= self._get_model_input(x_0, t_0, batch, c)
+        x_ = input_dict['full_input']
+        c_emb = input_dict['condition']
+        c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
+        # encode
+        z = self.epsilon_theta['encoder'](x_)
+        assert z.shape == c_emb.shape, 'cell latent and condition latent is not in the same space'
+        # pertub and decode
+        z_c = z + c_emb
+        z_c_act = self.act_fn()(z_c)
+        return self.epsilon_theta['decoder'](z_c_act)
+
+class ODE_eps(Epsilon_Linear):
+    def __init__(self, 
+                var_dim: int, 
+                time_emb_dim : int,
+                n_base_perturbs : int,
+                condition_emb_dim : int,
+                use_batch_index : bool,
+                hidden_size: list = [256,128,256],
+                activation : Union[str, nn.Module] = "Mish",
+                pretrained_embeddings : nn.Module = None,
+                ) :
+        super().__init__(var_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index,hidden_size, activation, pretrained_embeddings)
+
+    def forward(self, X):
+        # X contain x, t, c
+        c = self.c.long()
+        t0 = self.t0
+        input_dict= self._get_model_input(X, t0, None, c)
         x_ = input_dict['full_input']
         c_emb = input_dict['condition']
         c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
