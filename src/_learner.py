@@ -14,7 +14,7 @@ from typing import Union, Optional
 from einops import rearrange
 from collections import OrderedDict
 import pytorch_lightning as pl
-from  _sampler import linear_beta_schedule, quadratic_beta_schedule, sigmoid_beta_schedule, cosine_beta_schedule
+from  ._sampler import linear_beta_schedule, quadratic_beta_schedule, sigmoid_beta_schedule, cosine_beta_schedule
 
 
 
@@ -504,8 +504,8 @@ class ODE_learner(pl.LightningModule):
         # model_input = torch.cat([X_t0, t0.reshape(-1,1), condition_idx], axis=1)
         self.model.vf.vf.vf.c = condition_idx
         self.model.vf.vf.vf.t0 = t0
-        t_eval, x_hat = self.model(X_t0, t_span) #, args={"t_0":t0, "batch":exp_batch, "c":condition_idx})
-        x_hat = x_hat[-1] # select last point of solution trajectory
+        t_eval, x_hat_timeseries = self.model(X_t0, t_span) #, args={"t_0":t0, "batch":exp_batch, "c":condition_idx})
+        x_hat = x_hat_timeseries[-1] # select last point of solution trajectory
         loss = self.loss_fn(X_t1, x_hat)
 
         metrics_dict = {'train_loss': loss}
