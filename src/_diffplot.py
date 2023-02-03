@@ -12,13 +12,100 @@ import _reader
 import _epsilon_module
 import _sampler
 import _configure
-
+import scvelo
 import PATH
 import anndata as ad
 from anndata import AnnData 
 import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
+sys.path.append(os.path.join(PATH.main_dir, "script"))
+from script.main_train_with_PL_trainer import dl_from_config, get_model_from_config, get_sampler_from_configs
+
+mesc_marker_genes={
+        "Caudal Mesodem" : ['Cdx1', 'Cdx4', 'Hoxaas3', 'Fgfbp3'],
+        "Neural Crest" : ["Pax6", "Sfrp1", "Zic1",  "Ptn"],
+        "Anterior Primitive Streak" : ["T", "Mixl1", "Mesp1",  "Aplnr"],
+        "Surface Ectoderm" : ["Tfap2a", "Dlx5", "Bambi",  "Wnt6"],
+        "Paraxial mesoderm" : ["Tbx6", "Dll1", "Aldh1a2", "Cited1"],
+        "Allantois": ["Hand1", "Plac1", "Tgfb2", "Pitx1"],
+        # "Anterior Primitive Streak" : ["Gsc", "Eomes", "Lhx1", "Otx2"],
+        "Somitic mesoderm: Meox1": ["Meox1","Foxc2", "Gas1", "Ebf1"],
+        # "Primitive hematopoietic" : ["Tal2", "Cdx4", "Itga4", "Ephb1"],
+        "Notochord": ["Foxa2", "T", "Foxj1", "Slit2"]
+}
+mesc_marker_genes_thress={
+        "Caudal Mesodem" : [2,6,6,3],
+        "Neural Crest" : [8,5,8,4],
+    
+        "Anterior Primitive Streak" : [3, 4, 2, 2],
+        "Surface Ectoderm" : [5,5,2,2.5],
+        "Paraxial mesoderm" : [6, 8, 6,3],
+        "Allantois": [4, 6, 4, 2],
+    
+        # "Anterior Primitive Streak" : [8, 6, 8, 5],
+        "Somitic mesoderm: Meox1": [2,2,3,4],
+        # "Primitive hematopoietic" : ["Runx3", "Cdx4", "itga4", "ephb1"],
+        "Notochord": [1,2,6,4]
+}
+
+# checkpoint
+def get_ckpt_path(relative_path):
+    """the relative path is the name Shown in TensorBoard"""
+    onemore_layer = os.path.join(PATH.pth_dir, relative_path, "checkpoints")
+    ckpts = [file for file in os.listdir(onemore_layer) if file.endswith(".ckpt")]
+    abs_paths = [os.path.join(onemore_layer, ckpt) for ckpt in ckpts]
+    if len(abs_paths) == 1:
+        return abs_paths[0]
+    else: 
+        return abs_paths
+    
+def plot_representation(yaml_path, ckpt_path):
+
+    # config
+    model_config = os.path.join(PATH.main_dir, yaml_path)
+    configs = _configure.Yaml_configurer(model_config)
+
+    v0_ckpt = get_ckpt_path(
+        ckpt_path
+            )
+
+    # models
+    eps_net = get_model_from_config(configs, "0")
+    Sampler_pl_module = eval("_learner."+configs.sampler_class)
+
+    v0_equi_diff = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to('cpu')
+
+    v0_equi_diff.eval();
+
+
+    train_iter = iter(train_dl)
+
+    z_ls = []
+    z_c_ls = []
+    c_ls = []
+    for X, batch_idx, c, noise, t in tqdm(train_iter):
+
+        z_dict = v0_equi_diff.model.encode(X, t , None , c)
+
+        z_ls.append(z_dict['z'].detach().cpu().numpy())
+        z_c_ls.append(z_dict['z_c'].detach().cpu().numpy())
+        c_ls.append(z_dict['c'].detach().cpu().numpy())
+
+    z_ay = np.concatenate(z_ls, axis=0)
+    z_c_ay = np.concatenate(z_c_ls, axis=0)
+    c_ay = np.concatenate(c_ls, axis=0)
+
+    adata_zc = adata.copy()
+    adata_zc.obsm['Z_c'] = z_c_ay
+
+    # sc.pp.neighbors(adata_zc, n_neighbors = 35,  metric='cosine', method='umap', key_added='Z_c' ,use_rep='Z_c', )
+    sc.pp.neighbors(adata_zc, n_neighbors = 60,  key_added='Z_c' ,use_rep='Z_c', )
+    sc.tl.umap(adata_zc, min_dist = 0.5, maxiter=500, spread=1, random_state=0, neighbors_key='Z_c')
+
+    sc.pl.umap(adata_zc, color=['discrete_time', 'assignment'])
+
+    return adata_zc
 
 #   - device -
 def reload_sampler(yaml_file):
@@ -242,6 +329,19 @@ def triple_plot(annData:AnnData, color_key:str, dpi:int=100, **kwargs):
     for ax in axs:
         sns.despine(ax=ax)
     return fig, axs
+
+def compute_velocity(adata, velocity_matrix):
+    adata1 = adata.copy()
+    assert velocity_matrix.shape == adata1.X.shape
+    adata1.layers['velocity'] = velocity_matrix
+    adata1.layers['X'] = adata1.X
+
+    del adata1.uns['neighbors']
+
+    sc.pp.neighbors(adata1, n_neighbors=30)
+    scvelo.tl.velocity_graph(adata1, xkey='X')
+    return adata1
+
 
 def merge_with_control(diffused_annData:AnnData, control_annData:AnnData, subsample_control:float=1):
     """

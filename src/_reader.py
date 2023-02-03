@@ -324,6 +324,8 @@ class Diffuse_Dataset(Condition_AnnDataSet):
         t = self.T[i]
         neighbor_idx, _, _  = self._diffuse_neighbor(i, c_string, t)
         noise = self.X[neighbor_idx] - exp_mat
+
+        # expression matrix X , expreimental batch , perturbation [c1, c2, c3..], noise -> delta X, t: discreted t
         return exp_mat, batch_idx, condition_idx, noise, t
     
 

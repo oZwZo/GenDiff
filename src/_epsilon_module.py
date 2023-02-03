@@ -66,12 +66,15 @@ class Epsilon_base(nn.Module):
         self.condition_emb_dim = condition_emb_dim
 
         # time embeddings  ( which is the same as positional embeddings)
-        self.time_mlp = nn.Sequential(
-                SinoidalPositionEmbeddings(64),
-                nn.Linear(64, time_emb_dim),
-                nn.GELU(),
-                nn.Linear(time_emb_dim, time_emb_dim),
-            )
+        if time_emb_dim == 0:
+            self.time_mlp = None
+        else:
+            self.time_mlp = nn.Sequential(
+                    SinoidalPositionEmbeddings(64),
+                    nn.Linear(64, time_emb_dim),
+                    nn.GELU(),
+                    nn.Linear(time_emb_dim, time_emb_dim),
+                )
 
         # condition embeddings
         if condition_emb_dim != 0:
@@ -120,17 +123,21 @@ class Epsilon_base(nn.Module):
             # use the embedder for conditioned input
             c_emb = self.embedder(c)
         
-        time_emb = self.time_mlp(t)
+        if self.time_mlp is not None:
+            time_emb = self.time_mlp(t)
 
-        # process batch info
-        if batch is None:
-            if self.use_batch_index:
-                batch_tensor = torch.Tensor([0]).long()
-                X = torch.cat([x, time_emb, batch_tensor], dim=-1)
+            # process batch info
+            if batch is None:
+                if self.use_batch_index:
+                    batch_tensor = torch.Tensor([0]).long()
+                    X = torch.cat([x, time_emb, batch_tensor], dim=-1)
+                else:
+                    X = torch.cat([x, time_emb], dim=-1)
             else:
-                X = torch.cat([x, time_emb], dim=-1)
+                X = torch.cat([x, time_emb, batch], dim=-1)
         else:
-            X = torch.cat([x, time_emb, batch], dim=-1)
+            X = x
+            time_emb = None
 
         
         input_dict = {"full_input":X, "time_point":time_emb, "batch":None, "condition":c_emb}
@@ -256,6 +263,18 @@ class Epsilon_Linear(Epsilon_base):
         
         # time embeddings
 
+    def encode(self, x_0, t_0, batch = None, c = None):
+        # input
+        input_dict= self._get_model_input(x_0, t_0, batch, c)
+        x_ = input_dict['full_input']
+        c_emb = input_dict['condition']
+        c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
+        # encode
+        z = self.epsilon_theta['encoder'](x_)
+        z_c = z + c_emb
+        z_c_act = self.act_fn()(z_c)
+        return {"z":z, "z_c":z_c_act, "c":c_emb}
+
     def forward(self, x_0, t_0, batch = None, c = None):
         # input
         input_dict= self._get_model_input(x_0, t_0, batch, c)
@@ -269,6 +288,29 @@ class Epsilon_Linear(Epsilon_base):
         z_c = z + c_emb
         z_c_act = self.act_fn()(z_c)
         return self.epsilon_theta['decoder'](z_c_act)
+
+
+# TODO:
+class Epsilon_Linear_token_net(Epsilon_Linear):
+    def __init__(self, 
+                var_dim: int, 
+                time_emb_dim : int,
+                n_base_perturbs : int,
+                condition_emb_dim : int,
+                use_batch_index : bool,
+                hidden_size: list = [256,128,256],
+                activation : Union[str, nn.Module] = "Mish",
+                pretrained_embeddings : nn.Module = None,
+                ) :
+        super().__init__(var_dim=var_dim, time_emb_dim=time_emb_dim, n_base_perturbs=n_base_perturbs,
+                        condition_emb_dim=condition_emb_dim, use_batch_index=use_batch_index,hidden_size=hidden_size,
+                        activation=activation,pretrained_embeddings=pretrained_embeddings
+                        )
+
+
+
+
+
 
 class ODE_eps(Epsilon_Linear):
     def __init__(self, 
@@ -299,6 +341,48 @@ class ODE_eps(Epsilon_Linear):
         z_c_act = self.act_fn()(z_c)
         return self.epsilon_theta['decoder'](z_c_act)
 
+class ODE_eps_notime(ODE_eps):
+    def __init__(self, 
+                var_dim: int, 
+                time_emb_dim : int,
+                n_base_perturbs : int,
+                condition_emb_dim : int,
+                use_batch_index : bool,
+                hidden_size: list = [256,128,256],
+                activation : Union[str, nn.Module] = "Mish",
+                pretrained_embeddings : nn.Module = None,
+                ) :
+        super().__init__(var_dim, 0, n_base_perturbs, condition_emb_dim, use_batch_index,hidden_size, activation, pretrained_embeddings)
+
+    def _get_model_input(self, x, t, batch = None, c = None):
+        device = x.device 
+        batch_size = x.shape[0]
+        # sanity check
+        if self.use_batch_index and (batch is None):
+            raise ValueError("Can't predict without batch input ") 
+        elif not self.use_batch_index and (batch is not None):
+            warnings.warn("batch info is not used with `use_batch_index` turned off")
+        else:
+            pass
+
+        assert x.shape[1] == self.var_dim, "layer X should have the same dimension as `var_dim`"
+        
+        # process condition info
+        if c is None:
+            if self.embedder is None:
+                c = torch.zeros((batch_size, self.condition_emb_dim), device=device)
+            else:
+                control_tokens = torch.full((batch_size,), 0, device=device).long()
+                c_emb = self.embedder(control_tokens)
+
+        else:
+            if self.condition_emb_dim == 0:
+                raise ValueError("Can't Pass in condition embedding with `condition_emb_dim` set to 0")
+            # use the embedder for conditioned input
+            c_emb = self.embedder(c)
+        
+        input_dict = {"full_input":x,  "batch":None, "condition":c_emb}
+        return input_dict
 
 #     ___                  _     _          _   _    _         
 #    | __| _ __  ___      | |   (_) _ _    /_\ | |_ | |_  _ _  

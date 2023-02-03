@@ -136,6 +136,7 @@ class LinearAttention(nn.Module):
         return self.fc_out(v_out)
 
 class Residual(nn.Module):
+    """f(x)+x"""
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
