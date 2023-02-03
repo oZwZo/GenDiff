@@ -45,7 +45,7 @@ def dl_from_config(configs, shuffle=True):
         return default_collate(batch)
     dl_fn = partial(DataLoader, batch_size=configs.batch_size, 
                                 collate_fn = my_collate,
-                                shuffle=False, num_workers=4)
+                                shuffle=shuffle, num_workers=4)
     train_loader, val_loader, test_loader = (dl_fn(ds) for ds in AnDatasets)
     return train_loader, val_loader, test_loader
 
@@ -98,6 +98,10 @@ def get_sampler_from_configs(configs, eps_net):
 #               | | (_| | | | (/_ |             #
 
 if __name__ == '__main__':
+
+    device = torch.device("cuda:%s"%args.CUDA) if torch.cuda.is_available() else 'cpu'
+    accelerator = 'cuda' if torch.cuda.is_available() else 'cpu'
+
     configs = _configure.Yaml_configurer(args.model_config)
 
     train_loader, val_loader, test_loader = dl_from_config(configs)
@@ -109,12 +113,14 @@ if __name__ == '__main__':
     log_dir = os.path.join(path_n_util.pth_dir , configs.sampler_class, "{}_{}".format(configs.epsilon_class, run_name))
 
     trainer = pl.Trainer(
-            accelerator='gpu', devices=1,
+            accelerator=accelerator, devices=1,
             auto_lr_find=True,
             default_root_dir=log_dir,
             max_epochs=configs.epochs, 
             auto_select_gpus = True,
-            callbacks=[callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=15)])        
+            callbacks=[
+                callbacks.ModelCheckpoint(save_top_k=1, monitor="val_loss"),
+                callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=15)])        
 
     trainer.fit(Sampler, train_loader, val_loader)
     trainer.validate(Sampler, test_loader)
