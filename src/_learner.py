@@ -5,7 +5,7 @@ import os, sys, math
 import numpy as np
 import torch
 from torch import nn, einsum
-from torchdyn.core import NeuralODE
+# from torchdyn.core import NeuralODE
 from torch.nn.modules import activation
 import torch.nn.functional as F
 from turtle import forward

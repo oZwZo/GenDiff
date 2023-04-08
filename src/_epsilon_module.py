@@ -7,8 +7,8 @@ from turtle import forward
 from typing import Union, Optional
 from einops import rearrange
 from collections import OrderedDict
-sys.path.append('/ssd/users/wergillius/Project/diffuse_differentiate/src')
-from _helper_net import SinoidalPositionEmbeddings, SelfAttention, LinearAttention, Residual
+# sys.path.append('/ssd/users/wergillius/Project/diffuse_differentiate/src')
+from ._helper_net import SinoidalPositionEmbeddings, SelfAttention, LinearAttention, Residual
 import warnings
 warnings.simplefilter('once', UserWarning)
 

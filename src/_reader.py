@@ -74,14 +74,22 @@ class AnnDataSet(Dataset):
             raise KeyError(f"no data was matched with key {layers}")
         
         # check matrix type
-        self.sparse_input = (str(type(self.X)) == "<class 'scipy.sparse.csr.csr_matrix'>")
-        if self.sparse_input:
-            self.X = np.asarray(self.X.todense())
+        
+        self.X = self._to_dense(self.X)
         
         self.X = torch.from_numpy(self.X).float()
     
     def __len__(self):
         return self.adata.shape[0]
+    
+    def detect_sparse_matrix(self, x):
+        return 'csr_matrix' in str(type(x)) 
+    
+    def _to_dense(self, x):
+        if self.detect_sparse_matrix(x):
+            return np.asarray(x.todense())
+        else:
+            return x
     
     def __getitem__(self, index):
         return self.X[index]
@@ -219,8 +227,13 @@ class Diffuse_Dataset(Condition_AnnDataSet):
         
         self.k = n_neighbor
         self.pseudotime_key = pseudotime_key
+
         self.connectivities = self.adata.obsp[neighbor_key+'connectivities']
+        self.connectivities = self._to_dense(self.connectivities)
+
         self.distance = self.adata.obsp[neighbor_key+'distances']
+        # self.distance = self._to_dense(self.distance)
+
         self.max_degree = max_degree
         self.search_strategy = search_strategy
 
