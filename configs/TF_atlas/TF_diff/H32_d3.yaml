@@ -1,0 +1,47 @@
+---
+# This is a example file for main train config
+# To run a new experiment, duplicate this yaml file and rename it
+
+# High level params
+epsilon_class: Epsilon_Linear
+anndata_path: /home/wergillius/Project/diffuse_differentiate/data/TFAtlas/GSE217460_210322_TFAtlas_differentiated.h5ad
+sampler_class: Equivalent_Diffuse_Sampler
+lr: 0.00001
+pretrain_embedder_pth: null
+fix_pretrain: false
+epochs: 200
+max_degree: 3
+search_strategy: traverse
+# DataSet and Loader args
+dataset_class: Diffuse_Dataset
+split_key: split
+batch_size: 32
+n_neighbor: 15
+
+# some parameter fixed for integrated_mesendo
+unique_token_dict: unique_token_dict
+pseudotime_key: discrete_time
+condition_key: TF
+max_multiplexing: 1
+use_batch_index: false
+exp_batch_key: ""
+delimiter: none
+layers: X
+
+# epsilon net args
+var_dim: 4806
+time_emb_dim: 0
+n_base_perturbs: 3551
+condition_emb_dim: 32
+activation: Mish
+hidden_size:
+- 512
+- 32
+- 512
+
+# sampler args
+scheduler: linear_beta_schedule
+timesteps: 200
+loss_type: huber
+beta_start: 1e-8
+beta_end: 0.001
