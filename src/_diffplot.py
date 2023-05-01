@@ -4,15 +4,17 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import nn
+from functools import partial
 from torch.utils.data import DataLoader
 
 import scanpy as sc
 from src import _epsilon_module
-import _reader
-import _epsilon_module
-import _sampler
-import _configure
+from src import _reader
+from src import _sampler
+from src import _configure
+from src import _learner
 import scvelo
+from tqdm import tqdm
 import PATH
 import anndata as ad
 from anndata import AnnData 
@@ -60,52 +62,168 @@ def get_ckpt_path(relative_path):
     else: 
         return abs_paths
     
-def plot_representation(yaml_path, ckpt_path):
+def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10,device=3):
+    
+    
+    device = device if torch.cuda.is_available else 'cpu'
 
     # config
     model_config = os.path.join(PATH.main_dir, yaml_path)
     configs = _configure.Yaml_configurer(model_config)
+    
+    # dataloaders
+    dl_ls = dl_from_config(configs, shuffle=False)
+    adata_idx = np.concatenate([dl.dataset.adata.obs.index for dl in dl_ls], axis=0)
 
+    adata = sc.read(configs.anndata_path)
+    origin_idx = adata.obs.index
+    n = adata.shape[0]
+    ts = round(n**2 * (6/30000**2), 2)
+    print(f"loadin adata with {n} cells, which normally takes around {ts} mins")
+    
     v0_ckpt = get_ckpt_path(
         ckpt_path
             )
 
     # models
-    eps_net = get_model_from_config(configs, "0")
+    eps_net = get_model_from_config(configs, device)
     Sampler_pl_module = eval("_learner."+configs.sampler_class)
 
-    v0_equi_diff = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to('cpu')
-
+    v0_equi_diff = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to(device)
     v0_equi_diff.eval();
 
 
-    train_iter = iter(train_dl)
+    data_iterators = [iter(dl) for dl in dl_ls]
 
+    zc_ls = []
     z_ls = []
-    z_c_ls = []
     c_ls = []
-    for X, batch_idx, c, noise, t in tqdm(train_iter):
+    Delta_X = []
 
-        z_dict = v0_equi_diff.model.encode(X, t , None , c)
+    with torch.no_grad():
+        for iterator in data_iterators:
+            for X, batch_idx, c, noise, t in tqdm(iterator):
+                if device != 'cpu':
+                    c = c.to(device)
+                    X = X.to(device)
+                    t = t.to(device)
+                
+                z_dict = v0_equi_diff.model.encode(X, t , None , c)
+                delta_x = v0_equi_diff.model(X, t , None , c)
+                
+                Delta_X.append(delta_x.cpu().numpy())
+                zc_ls.append(z_dict['z_c'].cpu().numpy())
+                z_ls.append(z_dict['z'].cpu().numpy())
+                c_ls.append(z_dict['c'].cpu().numpy())
 
-        z_ls.append(z_dict['z'].detach().cpu().numpy())
-        z_c_ls.append(z_dict['z_c'].detach().cpu().numpy())
-        c_ls.append(z_dict['c'].detach().cpu().numpy())
+    # save the representatio to adata
+    adata_zc = adata[adata_idx].copy()
 
-    z_ay = np.concatenate(z_ls, axis=0)
-    z_c_ay = np.concatenate(z_c_ls, axis=0)
-    c_ay = np.concatenate(c_ls, axis=0)
+    # prediction
+    adata_zc.obsm['delta_x'] = np.concatenate(Delta_X, axis=0)
 
-    adata_zc = adata.copy()
-    adata_zc.obsm['Z_c'] = z_c_ay
+    # embedding
+    adata_zc.obsm['z_c'] = np.concatenate(zc_ls, axis=0)
+    adata_zc.obsm['z'] = np.concatenate(z_ls, axis=0)
+    adata_zc.obsm['c'] = np.concatenate(c_ls, axis=0)
 
     # sc.pp.neighbors(adata_zc, n_neighbors = 35,  metric='cosine', method='umap', key_added='Z_c' ,use_rep='Z_c', )
-    sc.pp.neighbors(adata_zc, n_neighbors = 60,  key_added='Z_c' ,use_rep='Z_c', )
-    sc.tl.umap(adata_zc, min_dist = 0.5, maxiter=500, spread=1, random_state=0, neighbors_key='Z_c')
+    print("\n"+"cell embedding extracted, ready to computing KNN...")
+    sc.pp.neighbors(adata_zc, n_neighbors = n_neighbors,  key_added=use_rep ,use_rep=use_rep, )
+    
+    print("\n"+"KNN constructed, computing UMAP...")
+    sc.tl.umap(adata_zc, min_dist = 0.5, maxiter=500, spread=1, random_state=0, neighbors_key=use_rep)
 
-    sc.pl.umap(adata_zc, color=['discrete_time', 'assignment'])
+    # sc.pl.umap(adata_zc, color=['discrete_time', 'assignment'])
+    print('\nFinished!')
+    return adata_zc[origin_idx,:].copy(), v0_equi_diff
 
-    return adata_zc
+def perturbation(yaml_path, ckpt_path, perturbation , n_neighbors = 10,device=3 , return_adata = False, compute_neighbor = False, compute_umap = False):
+    
+    use_rep = 'z_c'
+    device = device if torch.cuda.is_available else 'cpu'
+
+    # config
+    model_config = os.path.join(PATH.main_dir, yaml_path)
+    configs = _configure.Yaml_configurer(model_config)
+    
+    # dataloaders
+    dl_ls = dl_from_config(configs, shuffle=False)
+    adata_idx = np.concatenate([dl.dataset.adata.obs.index for dl in dl_ls], axis=0)
+
+    adata = sc.read(configs.anndata_path)
+    origin_idx = adata.obs.index
+    n = adata.shape[0]
+    ts = round(n**2 * (6/30000**2), 2)
+    print(f"loadin adata with {n} cells, which normally takes around {ts} mins")
+    
+    
+    # assert
+    assert perturbation in adata.uns['unique_token_dict']
+    c_perturb = adata.uns['unique_token_dict'][perturbation] 
+    
+    
+    
+    v0_ckpt = get_ckpt_path(
+        ckpt_path
+            )
+
+    # models
+    eps_net = get_model_from_config(configs, device)
+    Sampler_pl_module = eval("_learner."+configs.sampler_class)
+
+    v0_equi_diff = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to(device)
+    v0_equi_diff.eval();
+
+
+    data_iterators = [iter(dl) for dl in dl_ls]
+
+    zc_ls = []
+    z_ls = []
+    c_ls = []
+    Delta_X = []
+
+    with torch.no_grad():
+        for iterator in data_iterators:
+            for X, batch_idx, c, noise, t in tqdm(iterator):
+                if device != 'cpu':
+                    c_p = torch.from_numpy(np.array([c_perturb for i in range(c.shape[0])])).to(device)
+                    X = X.to(device)
+                    t = t.to(device)
+                
+                z_dict = v0_equi_diff.model.encode(X, t , None , c_p)
+                delta_x = v0_equi_diff.model(X, t , None , c_p)
+                
+                Delta_X.append(delta_x.cpu().numpy())
+                zc_ls.append(z_dict['z_c'].cpu().numpy())
+                z_ls.append(z_dict['z'].cpu().numpy())
+                c_ls.append(z_dict['c'].cpu().numpy())
+
+    # save the representatio to adata
+    adata_zc = adata[adata_idx].copy()
+
+    # prediction
+    adata_zc.obsm['delta_x'] = np.concatenate(Delta_X, axis=0)
+
+    # embedding
+    adata_zc.obsm['z_c'] = np.concatenate(zc_ls, axis=0)
+    adata_zc.obsm['z'] = np.concatenate(z_ls, axis=0)
+    adata_zc.obsm['c'] = np.concatenate(c_ls, axis=0)
+
+    # sc.pp.neighbors(adata_zc, n_neighbors = 35,  metric='cosine', method='umap', key_added='Z_c' ,use_rep='Z_c', )
+    if compute_neighbor:
+        print("\n"+"cell embedding extracted, ready to computing KNN...")
+        sc.pp.neighbors(adata_zc, n_neighbors = n_neighbors,  key_added=use_rep ,use_rep=use_rep, )
+    
+    if compute_umap:
+        print("\n"+"KNN constructed, computing UMAP...")
+        sc.tl.umap(adata_zc, min_dist = 0.5, maxiter=500, spread=1, random_state=0, neighbors_key=use_rep)
+
+    # sc.pl.umap(adata_zc, color=['discrete_time', 'assignment'])
+    if return_adata:
+        return adata_zc[origin_idx,:].copy(), v0_equi_diff
+    else:
+        return adata_zc[origin_idx,:].obsm['delta_x']
 
 #   - device -
 def reload_sampler(yaml_file):
@@ -190,6 +308,13 @@ def Xmat_by_time(time_series_X, time_interval=None, var_indexs=None, color_norm=
     
     return fig, axs, color_norm
 
+def get_dataloader(configs, adata, shuffle=False, **kwargs):
+
+    ds_fn = partial(eval(f"_reader.{configs.dataset_class}"), adata,  **configs.dataset_kwargs)
+    
+    AnDataset = ds_fn(which_set='All')
+    
+    return DataLoader(AnDataset, shuffle=False,**kwargs)
 
 def get_annDataLoader(annData, unique_token_dict=None, layers='counts',**kwargs):
     """
@@ -330,7 +455,7 @@ def triple_plot(annData:AnnData, color_key:str, dpi:int=100, **kwargs):
         sns.despine(ax=ax)
     return fig, axs
 
-def compute_velocity(adata, velocity_matrix):
+def compute_velocity(adata, velocity_matrix, n_jobs=None):
     adata1 = adata.copy()
     assert velocity_matrix.shape == adata1.X.shape
     adata1.layers['velocity'] = velocity_matrix
@@ -339,7 +464,7 @@ def compute_velocity(adata, velocity_matrix):
     del adata1.uns['neighbors']
 
     sc.pp.neighbors(adata1, n_neighbors=30)
-    scvelo.tl.velocity_graph(adata1, xkey='X')
+    scvelo.tl.velocity_graph(adata1, xkey='X', n_jobs=n_jobs)
     return adata1
 
 

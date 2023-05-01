@@ -61,8 +61,10 @@ class AnnDataSet(Dataset):
                     split_key:str = 'split', 
                     which_set: str ='train'):
         super().__init__()
-        
-        self.adata = AnnData[AnnData.obs[split_key]==which_set].copy()
+        if which_set == 'All':
+            self.adata = AnnData.copy()
+        else:
+            self.adata = AnnData[AnnData.obs[split_key]==which_set].copy()
 
         if layers in self.adata.layers:
             self.X = self.adata.layers[layers]
