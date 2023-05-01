@@ -8,7 +8,7 @@ import scanpy as sc
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning import callbacks 
-from torchsummary import summary
+# from torchsummary import summary
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
 from functools import partial
@@ -102,6 +102,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:%s"%args.CUDA) if torch.cuda.is_available() else 'cpu'
     accelerator = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+    config_dir = os.path.basename(os.path.dirname(args.model_config))
     configs = _configure.Yaml_configurer(args.model_config)
 
     train_loader, val_loader, test_loader = dl_from_config(configs)
@@ -110,7 +111,7 @@ if __name__ == '__main__':
 
 
     run_name = os.path.basename(args.model_config).replace(".yaml","")
-    log_dir = os.path.join(path_n_util.pth_dir , configs.sampler_class, "{}_{}".format(configs.epsilon_class, run_name))
+    log_dir = os.path.join(path_n_util.pth_dir , config_dir, "{}_{}".format(configs.epsilon_class, run_name))
 
     trainer = pl.Trainer(
             accelerator=accelerator, devices=1,
