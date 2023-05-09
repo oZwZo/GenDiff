@@ -1,6 +1,6 @@
 import os, sys, json, argparse
 dn = os.path.dirname
-prev_dir = dn(dn(os.path.abspath(__file__)))
+prev_dir = dn(os.path.abspath(__file__))
 config_path = os.path.join(prev_dir, 'machine_config.json')
 
 global main_dir

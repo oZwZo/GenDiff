@@ -100,7 +100,7 @@ def get_sampler_from_configs(configs, eps_net):
 if __name__ == '__main__':
 
     device = torch.device("cuda:%s"%args.CUDA) if torch.cuda.is_available() else 'cpu'
-    accelerator = 'cuda' if torch.cuda.is_available() else 'cpu'
+    accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
 
     config_dir = os.path.basename(os.path.dirname(args.model_config))
     configs = _configure.Yaml_configurer(args.model_config)

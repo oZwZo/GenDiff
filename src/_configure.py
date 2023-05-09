@@ -24,19 +24,22 @@ class Yaml_configurer(object):
             "unique_token_dict", "condition_key", "max_multiplexing", "use_batch_index",
             "exp_batch_key", "delimiter", "layers", "split_key",
         ]
-        if self.dataset_class in ["Diffuse_Dataset", "ODE_dataset"]:
-            attr_list += ["unique_token_dict", "pseudotime_key", "n_neighbor", "max_degree", "search_strategy"]
+        attr_list += ["unique_token_dict", "pseudotime_key", "n_neighbor", "max_degree", "search_strategy" ,"check_samples"]
+        if self.dataset_class in ["Diffuse_Dataset", "ODE_dataset", "Fix_Degree_Diffuse"]:
+            attr_list += []
+        elif self.dataset_class in ["Root_Diffuse"]:
+            attr_list += ["root_cell"]
         return  {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}
 
     @property
     def epsilon_kwargs(self):
         # base params
         attr_list = [
-            "var_dim", "time_emb_dim", "n_base_perturbs", "condition_emb_dim", 
+            "gene_dim", "time_emb_dim", "n_base_perturbs", "condition_emb_dim", 
             "use_batch_index", "activation"]
         
         # specific params
-        if self.epsilon_class in ["Epsilon_Linear", "ODE_eps"]:
+        if self.epsilon_class in ["Epsilon_Linear", "ODE_eps", "Epsilon_AttnCondition"]:
             attr_list.append("hidden_size")
         elif self.epsilon_class == "Epsilon_LinearAttn":
             attr_list += ['hidden_size', 'qk_dimension', 'n_heads']
