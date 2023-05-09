@@ -186,10 +186,10 @@ def perturbation(yaml_path, ckpt_path, perturbation , n_neighbors = 10,device=3 
     with torch.no_grad():
         for iterator in data_iterators:
             for X, batch_idx, c, noise, t in tqdm(iterator):
-                if device != 'cpu':
-                    c_p = torch.from_numpy(np.array([c_perturb for i in range(c.shape[0])])).to(device)
-                    X = X.to(device)
-                    t = t.to(device)
+                
+                c_p = torch.from_numpy(np.array([c_perturb for i in range(c.shape[0])])).to(device)
+                X = X.to(device)
+                t = t.to(device)
                 
                 z_dict = v0_equi_diff.model.encode(X, t , None , c_p)
                 delta_x = v0_equi_diff.model(X, t , None , c_p)
@@ -455,16 +455,18 @@ def triple_plot(annData:AnnData, color_key:str, dpi:int=100, **kwargs):
         sns.despine(ax=ax)
     return fig, axs
 
-def compute_velocity(adata, velocity_matrix, n_jobs=None):
+def compute_velocity(adata, velocity_matrix,n_neighbors=30, **kwargs):
     adata1 = adata.copy()
     assert velocity_matrix.shape == adata1.X.shape
     adata1.layers['velocity'] = velocity_matrix
     adata1.layers['X'] = adata1.X
 
-    del adata1.uns['neighbors']
-
-    sc.pp.neighbors(adata1, n_neighbors=30)
-    scvelo.tl.velocity_graph(adata1, xkey='X', n_jobs=n_jobs)
+    if n_neighbors is not None:
+        del adata1.uns['neighbors']
+        sc.pp.neighbors(adata1, n_neighbors=n_neighbors)
+    else:
+        n_neighbors = 30 
+    scvelo.tl.velocity_graph(adata1, xkey='X', n_neighbors=n_neighbors,**kwargs)
     return adata1
 
 
