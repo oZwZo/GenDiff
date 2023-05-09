@@ -3,7 +3,6 @@ import os, sys, math
 import numpy as np
 import torch
 from torch import nn, einsum
-from torch.distributions import Normal
 from turtle import forward
 from typing import Union, Optional
 from einops import rearrange
@@ -33,7 +32,7 @@ class Epsilon_base(nn.Module):
 
     Parameters
     ----------
-    gene_dim
+    var_dim
         int, number of gene as input
     time_emb_dim
         int, the dimension of time embedding
@@ -49,7 +48,7 @@ class Epsilon_base(nn.Module):
         nn.Module; This is the base parent class awaiting for inheritence. Don't call it directly.
     """
     def __init__(self,
-                gene_dim : int, 
+                var_dim : int, 
                 time_emb_dim : int,
                 n_base_perturbs :int,
                 condition_emb_dim : int = 0,
@@ -60,8 +59,8 @@ class Epsilon_base(nn.Module):
         super().__init__()  
 
         # supposed to be the number of highly var genes
-        self.gene_dim = gene_dim
-        self.input_dim = gene_dim + time_emb_dim + int(use_batch_index)
+        self.var_dim = var_dim
+        self.input_dim = var_dim + time_emb_dim + int(use_batch_index)
 
         self.use_batch_index = use_batch_index
         self.condition_emb_dim = condition_emb_dim
@@ -108,7 +107,7 @@ class Epsilon_base(nn.Module):
         else:
             pass
 
-        assert x.shape[1] == self.gene_dim, "layer X should have the same dimension as `gene_dim`"
+        assert x.shape[1] == self.var_dim, "layer X should have the same dimension as `var_dim`"
         
         # process condition info
         if c is None:
@@ -143,9 +142,6 @@ class Epsilon_base(nn.Module):
         
         input_dict = {"full_input":X, "time_point":time_emb, "batch":None, "condition":c_emb}
         return input_dict
-
-    def get_DeltaX(self, batch_data):
-        raise NotImplementedError("base class method `get_DeltaX` not defined")
     
     def forward(self, x, t, batch = None, c=None):
         r"""
@@ -189,7 +185,7 @@ class Epsilon_Linear(Epsilon_base):
         We encourage to have one layer in the middle to be `condition_emb_dim` 
 
     ---Base param----
-    gene_dim
+    var_dim
         int, number of gene as input
     time_emb_dim
         int, the dimension of time embedding
@@ -202,7 +198,7 @@ class Epsilon_Linear(Epsilon_base):
 
     """
     def __init__(self, 
-                gene_dim: int, 
+                var_dim: int, 
                 time_emb_dim : int,
                 n_base_perturbs : int,
                 condition_emb_dim : int,
@@ -211,10 +207,10 @@ class Epsilon_Linear(Epsilon_base):
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
+        super().__init__(var_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
         
-        
-        dimensions = [self.input_dim] + hidden_size + [self.gene_dim]
+        self.activation = activation
+        dimensions = [self.input_dim] + hidden_size + [self.var_dim]
 
         # insert the conditional embeddings
         if self.condition_emb_dim in dimensions:
@@ -234,12 +230,35 @@ class Epsilon_Linear(Epsilon_base):
         decoder_dims = dimensions[self.latent_layer:]
         self.decoder_dims = decoder_dims
 
-        self.i = 0
+        i = 0
         # define encdoer
-        self.activation = activation
+        encoder = []
+        for input_dim, output_dim in zip(encoder_dims[:-1], encoder_dims[1:]):
+            encoder.append((f'linear_{i}', nn.Linear(input_dim, output_dim)))
+            if i < len(encoder_dims):
+                encoder.append((f'{activation}_{i}', self.act_fn()))
+            else:
+                # no activation for the latent layer
+                pass
+            i+=1
         self.latent_activator = self.act_fn()
-        encoder = self.define_block(encoder_dims, batch_norm=False)
-        decoder = self.define_block(decoder_dims)
+        # define decdoer
+        decoder = []
+        for input_dim, output_dim in zip(decoder_dims[:-1], decoder_dims[1:]):
+            decoder += [
+                (f'linear_{i}', nn.Linear(input_dim, output_dim)),
+                (f'BatchNorm_{i}', nn.BatchNorm1d(output_dim)),
+            ]
+            if i < len(decoder_dims):
+                decoder.append((f'{activation}_{i}', self.act_fn()))
+            else:
+                # no activation for the last layer
+                pass
+            i+=1
+
+        
+        # encoder = self.define_block(encoder_dims)
+        # decoder = self.define_block(decoder_dims)
         
         self.epsilon_theta = nn.ModuleDict(
             {'encoder': nn.Sequential(OrderedDict(encoder)), 
@@ -247,20 +266,6 @@ class Epsilon_Linear(Epsilon_base):
             )
         
         # time embeddings
-
-    def define_block(self,dims, batch_norm=True):
-        encoder = []
-        for input_dim, output_dim in zip(dims[:-1], dims[1:]):
-            encoder.append((f'linear_{self.i}', nn.Linear(input_dim, output_dim)))
-            if self.i < len(dims):
-                if batch_norm:
-                    encoder.append((f'BatchNorm_{self.i}', nn.BatchNorm1d(output_dim)))
-                encoder.append((f'{self.activation}_{self.i}', self.act_fn()))
-            else:
-                # no activation for the latent layer
-                pass
-            self.i+=1
-        return encoder
 
     def encode(self, x_0, t_0, batch = None, c = None):
         # input
@@ -290,7 +295,7 @@ class Epsilon_Linear(Epsilon_base):
 
 class Epsilon_AttnCondition(Epsilon_Linear):
     def __init__(self, 
-                gene_dim: int, 
+                var_dim: int, 
                 time_emb_dim : int,
                 n_base_perturbs : int,
                 condition_emb_dim : int,
@@ -299,7 +304,7 @@ class Epsilon_AttnCondition(Epsilon_Linear):
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, hidden_size,  activation, pretrained_embeddings)
+        super().__init__(var_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, hidden_size,  activation, pretrained_embeddings)
 
         
         # self.encoder_dims[-1] = self.encoder_dims[-1] * 2
@@ -313,6 +318,20 @@ class Epsilon_AttnCondition(Epsilon_Linear):
             )
         
         # time embeddings
+
+    def define_block(self,dims):
+        i = 0
+        encoder = []
+        for input_dim, output_dim in zip(dims[:-1], dims[1:]):
+            encoder.append((f'linear_{i}', nn.Linear(input_dim, output_dim)))
+            if i < len(dims):
+                encoder.append((f'BatchNorm_{i}', nn.BatchNorm1d(output_dim)))
+                encoder.append((f'{self.activation}_{i}', self.act_fn()))
+            else:
+                # no activation for the latent layer
+                pass
+            i+=1
+        return encoder
 
     def condition_attention(self, z_emb, c_emb):
         """
@@ -360,9 +379,9 @@ class Epsilon_AttnCondition(Epsilon_Linear):
         return self.epsilon_theta['decoder'](z_c_act)
 
 
-class Epsilon_CAE(Epsilon_Linear):
+class Epsilon_CVAE(Epsilon_Linear):
     def __init__(self, 
-                gene_dim: int, 
+                var_dim: int, 
                 time_emb_dim : int,
                 n_base_perturbs : int,
                 condition_emb_dim : int,
@@ -371,69 +390,11 @@ class Epsilon_CAE(Epsilon_Linear):
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
+        super().__init__(var_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
         
         
-        self.encoder_dims[-1] = self.encoder_dims[-1] 
-        
-        encoder = define_block(self.encoder_dims)
-        decoder = define_block(self.decoder_dims)
-        
-        self.epsilon_theta = nn.ModuleDict(
-            {'encoder': nn.Sequential(OrderedDict(encoder)), 
-            'decoder': nn.Sequential(OrderedDict(decoder)),
-            }
-            )
-
-        self.loss_fn = nn.MSELoss()
-        # time embeddings
-
-    def encode(self, x_0, t_0, batch = None, c = None):
-        # input
-        input_dict= self._get_model_input(x_0, t_0, batch, c)
-        x_ = input_dict['full_input']
-        c_emb = input_dict['condition']
-        c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
-        
-        # encode
-        z = self.epsilon_theta['encoder'](x_)
-        z_c = z + c_emb
-        z_c_act = self.act_fn()(z_c)
-        return {"z":z, "z_c":z_c_act, "c":c_emb}
-
-    def get_DeltaX(self, batch_data):
-        """
-        from batch data, return 
-        X, batch_idx, condition_idx, Delta_X, degree
-        """
-        return batch_data[3]
-
-    def forward(self, x_0, c, batch = None, t_0 = None):
-        
-        z_dict = self.encode(x_0, c, batch, t_0)
-        z_c_act = z_dict['z_c']
-
-        return self.epsilon_theta['decoder'](z_c_act)
-
-    def compute_loss(self, DeltaX, DeltaX_pred):
-        return self.loss_fn(DeltaX, DeltaX_pred)
-
-
-class Epsilon_CVAE(Epsilon_CAE):
-    def __init__(self, 
-                gene_dim: int, 
-                time_emb_dim : int,
-                n_base_perturbs : int,
-                condition_emb_dim : int,
-                use_batch_index : bool,
-                hidden_size: list = [256,128,256],
-                activation : Union[str, nn.Module] = "Mish",
-                pretrained_embeddings : nn.Module = None,
-                ) :
-        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
         self.encoder_dims[-1] = self.encoder_dims[-1] * 2
-        self.decoder_dims[-1] = self.decoder_dims[-1] * 2
-
+        
         encoder = define_block(self.encoder_dims)
         decoder = define_block(self.decoder_dims)
         lag_predictor = define_block(self.decoder_dims)
@@ -441,15 +402,15 @@ class Epsilon_CVAE(Epsilon_CAE):
         self.epsilon_theta = nn.ModuleDict(
             {'encoder': nn.Sequential(OrderedDict(encoder)), 
             'decoder': nn.Sequential(OrderedDict(decoder)),
-            })
+            'lag_predictor': nn.Sequential(OrderedDict(lag_predictor))}
+            )
         
-        self.var_act = nn.Softplus()
-        self.loss_fn = nn.GaussianNLLLoss()
+        # time embeddings
 
     def reparameterize(self, mu, logvar):
-        q_v = self.var_act(logvar) + 1e-4
-        dist = Normal(mu, q_v.sqrt())
-        z = dist.rsample()
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        z = mu + eps * std
         return z
 
     def encode(self, x_0, t_0, batch = None, c = None):
@@ -462,7 +423,6 @@ class Epsilon_CVAE(Epsilon_CAE):
         # encode
         n_latent = self.encoder_dims[-1] // 2
         mu_logvar = self.epsilon_theta['encoder'](x_)
-
         mu = mu_logvar[:, :n_latent]
         logvar = mu_logvar[:, n_latent:]    
         
@@ -471,27 +431,26 @@ class Epsilon_CVAE(Epsilon_CAE):
         z_c = z + c_emb
         z_c_act = self.act_fn()(z_c)
         return {"z":z, "z_c":z_c_act, "c":c_emb}
-    
-    def forward(self, x_0, c, batch = None, t_0 = None):
+
+    def forward(self, x_0, t_0, batch = None, c = None):
+        # input
+        input_dict= self._get_model_input(x_0, t_0, batch, c)
+        x_ = input_dict['full_input']
+        c_emb = input_dict['condition']
+        c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
         # encode
-        z_dict = self.encode(x_0, c, batch, t_0)
-        z_c_act = z_dict['z_c']
+        z = self.epsilon_theta['encoder'](x_)
+        assert z.shape == c_emb.shape, 'cell latent and condition latent is not in the same space'
+        # pertub and decode
+        z_c = z + c_emb
+        z_c_act = self.act_fn()(z_c)
+        return self.epsilon_theta['decoder'](z_c_act)
 
-        # decode
-        n_gene = self.gene_dim
-        out = self.epsilon_theta['decoder'](z_c_act)
-        mu = out[:, :n_gene]
-        var = out[:, n_gene:]
-        return mu, var
-
-    def compute_loss(self, DeltaX, mu_var):
-        mu, var = mu_var
-        return self.loss_fn(mu, DeltaX, var)
 
 # TODO:
 class Epsilon_Linear_token_net(Epsilon_Linear):
     def __init__(self, 
-                gene_dim: int, 
+                var_dim: int, 
                 time_emb_dim : int,
                 n_base_perturbs : int,
                 condition_emb_dim : int,
@@ -500,7 +459,7 @@ class Epsilon_Linear_token_net(Epsilon_Linear):
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim=gene_dim, time_emb_dim=time_emb_dim, n_base_perturbs=n_base_perturbs,
+        super().__init__(var_dim=var_dim, time_emb_dim=time_emb_dim, n_base_perturbs=n_base_perturbs,
                         condition_emb_dim=condition_emb_dim, use_batch_index=use_batch_index,hidden_size=hidden_size,
                         activation=activation,pretrained_embeddings=pretrained_embeddings
                         )
@@ -512,7 +471,7 @@ class Epsilon_Linear_token_net(Epsilon_Linear):
 
 class ODE_eps(Epsilon_Linear):
     def __init__(self, 
-                gene_dim: int, 
+                var_dim: int, 
                 time_emb_dim : int,
                 n_base_perturbs : int,
                 condition_emb_dim : int,
@@ -521,7 +480,7 @@ class ODE_eps(Epsilon_Linear):
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index,hidden_size, activation, pretrained_embeddings)
+        super().__init__(var_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index,hidden_size, activation, pretrained_embeddings)
 
     def forward(self, X):
         # X contain x, t, c
@@ -541,7 +500,7 @@ class ODE_eps(Epsilon_Linear):
 
 class ODE_eps_notime(ODE_eps):
     def __init__(self, 
-                gene_dim: int, 
+                var_dim: int, 
                 time_emb_dim : int,
                 n_base_perturbs : int,
                 condition_emb_dim : int,
@@ -550,7 +509,7 @@ class ODE_eps_notime(ODE_eps):
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim, 0, n_base_perturbs, condition_emb_dim, use_batch_index,hidden_size, activation, pretrained_embeddings)
+        super().__init__(var_dim, 0, n_base_perturbs, condition_emb_dim, use_batch_index,hidden_size, activation, pretrained_embeddings)
 
     def _get_model_input(self, x, t, batch = None, c = None):
         device = x.device 
@@ -563,7 +522,7 @@ class ODE_eps_notime(ODE_eps):
         else:
             pass
 
-        assert x.shape[1] == self.gene_dim, "layer X should have the same dimension as `gene_dim`"
+        assert x.shape[1] == self.var_dim, "layer X should have the same dimension as `var_dim`"
         
         # process condition info
         if c is None:
@@ -611,7 +570,7 @@ class Epsilon_LinearAttn(Epsilon_base):
         the actual hidden size of qkv layer is determined by `qk_dimension` * `n_heads` 
 
     ---Base param----
-    gene_dim
+    var_dim
         int, number of gene as input
     time_emb_dim
         int, the dimension of time embedding
@@ -624,7 +583,7 @@ class Epsilon_LinearAttn(Epsilon_base):
     """
     
     def __init__(self, 
-                gene_dim: int, 
+                var_dim: int, 
                 time_emb_dim : int,
                 n_base_perturbs : int,
                 condition_emb_dim : int,
@@ -635,14 +594,14 @@ class Epsilon_LinearAttn(Epsilon_base):
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
+        super().__init__(var_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
         
         
         # define epsilon_theta network
         # start with input layer
 
         # ---- split layers ---------
-        dimensions = [self.input_dim] + hidden_size + [self.gene_dim]
+        dimensions = [self.input_dim] + hidden_size + [self.var_dim]
 
         # insert the conditional embeddings
         if self.condition_emb_dim in dimensions:
@@ -702,7 +661,7 @@ class Epsilon_LinearAttn(Epsilon_base):
                     )
             decoder.append((f'{activation}_{i}', self.act_fn()))
 
-        decoder.append((f'Output_fc_{i}', nn.Linear(hidden_size[-1], self.gene_dim)))
+        decoder.append((f'Output_fc_{i}', nn.Linear(hidden_size[-1], self.var_dim)))
         
         self.epsilon_theta = nn.ModuleDict(
             {'encoder': nn.Sequential(OrderedDict(encoder)), 
