@@ -29,7 +29,7 @@ delimiter: none
 layers: X
 
 # epsilon net args
-var_dim: 4806
+gene_dim: 4806
 time_emb_dim: 0
 n_base_perturbs: 3551
 condition_emb_dim: 256

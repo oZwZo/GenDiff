@@ -17,6 +17,7 @@ dataset_class: Diffuse_Dataset
 split_key: split
 batch_size: 32
 n_neighbor: 30
+check_samples: true
 
 # some parameter fixed for integrated_mesendo
 unique_token_dict: unique_token_dict
@@ -29,7 +30,7 @@ delimiter: none
 layers: X
 
 # epsilon net args
-var_dim: 4806
+gene_dim: 4806
 time_emb_dim: 0
 n_base_perturbs: 3551
 condition_emb_dim: 64

@@ -21,7 +21,7 @@ split_key: split
 batch_size: 32
 
 # epsilon net args
-var_dim: 5000
+gene_dim: 5000
 time_emb_dim: 128
 n_base_perturbs: 106
 condition_emb_dim: 128

@@ -30,7 +30,7 @@ delimiter: none
 layers: X
 
 # epsilon net args
-var_dim: 2000
+gene_dim: 2000
 time_emb_dim: 128
 n_base_perturbs: 106
 condition_emb_dim: 128
