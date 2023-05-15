@@ -4,16 +4,16 @@
 
 # High level params
 epsilon_class: Epsilon_Linear
-anndata_path: /home/wergillius/Project/diffuse_differentiate/data/TFAtlas/GSE217460_210322_TFAtlas_differentiated.h5ad
+anndata_path: /home/wergillius/Project/diffuse_differentiate/data/TFAtlas/TFAtlas_filtered_diff.h5ad
 sampler_class: Equivalent_Diffuse_Sampler
-lr: 0.00001
+lr: 0.0003
 pretrain_embedder_pth: null
 fix_pretrain: false
 epochs: 200
 max_degree: 3
 search_strategy: traverse
 # DataSet and Loader args
-dataset_class: Diffuse_Dataset
+dataset_class: Path_Diffuse
 split_key: split
 batch_size: 32
 n_neighbor: 15
@@ -27,7 +27,7 @@ use_batch_index: false
 exp_batch_key: ""
 delimiter: none
 layers: X
-check_samples: true
+check_samples: false
 
 # epsilon net args
 gene_dim: 4806
@@ -37,7 +37,11 @@ condition_emb_dim: 256
 activation: Mish
 hidden_size:
 - 512
+- 512
+- 512
 - 256
+- 512
+- 512
 - 512
 
 # sampler args
