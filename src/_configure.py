@@ -15,7 +15,8 @@ class Yaml_configurer(object):
     def store_attr(self):
         for k, v in self.config_dict.items():
             self.__setattr__(k, v)
-        
+            if v is None:
+                self.__setattr__(k, None)
 
     @property
     def dataset_kwargs(self):
@@ -24,10 +25,11 @@ class Yaml_configurer(object):
             "unique_token_dict", "condition_key", "max_multiplexing", "use_batch_index",
             "exp_batch_key", "delimiter", "layers", "split_key",
         ]
-        attr_list += ["unique_token_dict", "pseudotime_key", "n_neighbor", "max_degree", "search_strategy" ,"check_samples"]
-        if self.dataset_class in ["Diffuse_Dataset", "ODE_dataset", "Fix_Degree_Diffuse"]:
-            attr_list += []
+        diffuse_attr = ["unique_token_dict", "pseudotime_key", "n_neighbor", "max_degree", "search_strategy" ,"check_samples"]
+        if self.dataset_class in ["Diffuse_Dataset", "Traverse_Dataset", "Path_Diffuse","ODE_dataset", "Fix_Degree_Diffuse"]:
+            attr_list += diffuse_attr
         elif self.dataset_class in ["Root_Diffuse"]:
+            attr_list += diffuse_attr
             attr_list += ["root_cell"]
         return  {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}
 
@@ -43,6 +45,8 @@ class Yaml_configurer(object):
             attr_list.append("hidden_size")
         elif self.epsilon_class == "Epsilon_LinearAttn":
             attr_list += ['hidden_size', 'qk_dimension', 'n_heads']
+        elif self.epsilon_class in ["Epsilon_CAE", "Epsilon_CVAE"]:
+            attr_list += ['hidden_size']
         else:
             raise ValueError("non seen `Epsilon` Module")
         
@@ -61,5 +65,8 @@ class Yaml_configurer(object):
         
         if self.sampler_class in ['ODE_learner']:
             attr_list = ['loss_type']
+
+        elif self.sampler_class in ['AE_learner']:
+            attr_list = ['lr']
 
         return {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}

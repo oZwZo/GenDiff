@@ -3,7 +3,7 @@ import os, sys, math
 import numpy as np
 import torch
 from torch import nn, einsum
-from torch.distributions import Normal
+import torch.distributions as db
 from turtle import forward
 from typing import Union, Optional
 from einops import rearrange
@@ -97,7 +97,7 @@ class Epsilon_base(nn.Module):
             self.act_fn = activation() # if  callable nn Module
 
     
-    def _get_model_input(self, x, t, batch = None, c = None):
+    def _get_model_input(self, x, c, batch = None, t = None):
         device = x.device 
         batch_size = x.shape[0]
         # sanity check
@@ -147,7 +147,7 @@ class Epsilon_base(nn.Module):
     def get_DeltaX(self, batch_data):
         raise NotImplementedError("base class method `get_DeltaX` not defined")
     
-    def forward(self, x, t, batch = None, c=None):
+    def forward(self, x, c, batch = None, t=None):
         r"""
         Parameters
         ---------
@@ -233,6 +233,7 @@ class Epsilon_Linear(Epsilon_base):
         self.encoder_dims = encoder_dims
         decoder_dims = dimensions[self.latent_layer:]
         self.decoder_dims = decoder_dims
+        self.variational = False
 
         self.i = 0
         # define encdoer
@@ -262,9 +263,9 @@ class Epsilon_Linear(Epsilon_base):
             self.i+=1
         return encoder
 
-    def encode(self, x_0, t_0, batch = None, c = None):
+    def encode(self, x_0, c, batch = None, t_0 = None):
         # input
-        input_dict= self._get_model_input(x_0, t_0, batch, c)
+        input_dict= self._get_model_input(x_0, c, batch, t_0)
         x_ = input_dict['full_input']
         c_emb = input_dict['condition']
         c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
@@ -274,9 +275,9 @@ class Epsilon_Linear(Epsilon_base):
         z_c_act = self.act_fn()(z_c)
         return {"z":z, "z_c":z_c_act, "c":c_emb}
 
-    def forward(self, x_0, t_0, batch = None, c = None):
+    def forward(self, x_0, c, batch = None, t_0 = None):
         # input
-        input_dict= self._get_model_input(x_0, t_0, batch, c)
+        input_dict= self._get_model_input(x_0, c, batch, t_0)
         x_ = input_dict['full_input']
         c_emb = input_dict['condition']
         c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
@@ -371,24 +372,22 @@ class Epsilon_CAE(Epsilon_Linear):
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
+        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, hidden_size, activation, pretrained_embeddings)
+        self.variational = False
         
-        
-        self.encoder_dims[-1] = self.encoder_dims[-1] 
-        
-        encoder = define_block(self.encoder_dims)
-        decoder = define_block(self.decoder_dims)
+        self.i = 0
+        encoder = self.define_block(self.encoder_dims)
+        decoder = self.define_block(self.decoder_dims)
         
         self.epsilon_theta = nn.ModuleDict(
             {'encoder': nn.Sequential(OrderedDict(encoder)), 
             'decoder': nn.Sequential(OrderedDict(decoder)),
-            }
-            )
+            })
 
         self.loss_fn = nn.MSELoss()
         # time embeddings
 
-    def encode(self, x_0, t_0, batch = None, c = None):
+    def encode(self, x_0, c, batch, t_0):
         # input
         input_dict= self._get_model_input(x_0, t_0, batch, c)
         x_ = input_dict['full_input']
@@ -406,7 +405,7 @@ class Epsilon_CAE(Epsilon_Linear):
         from batch data, return 
         X, batch_idx, condition_idx, Delta_X, degree
         """
-        return batch_data[3]
+        return batch_data[-2]
 
     def forward(self, x_0, c, batch = None, t_0 = None):
         
@@ -422,21 +421,28 @@ class Epsilon_CAE(Epsilon_Linear):
 class Epsilon_CVAE(Epsilon_CAE):
     def __init__(self, 
                 gene_dim: int, 
-                time_emb_dim : int,
-                n_base_perturbs : int,
-                condition_emb_dim : int,
-                use_batch_index : bool,
+                kl_weight : float = 1.0,
+                time_emb_dim : int = 0,
+                n_base_perturbs : int = 1,
+                condition_emb_dim : int = 32,
+                use_batch_index : bool = False,
                 hidden_size: list = [256,128,256],
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
                 ) :
-        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
+        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, hidden_size, activation, pretrained_embeddings)
         self.encoder_dims[-1] = self.encoder_dims[-1] * 2
-        self.decoder_dims[-1] = self.decoder_dims[-1] * 2
+        self.decoder_dims[-1] = self.decoder_dims[-1] 
+        self.variational = True
+        self.kl_weight = kl_weight
+        
 
-        encoder = define_block(self.encoder_dims)
-        decoder = define_block(self.decoder_dims)
-        lag_predictor = define_block(self.decoder_dims)
+        self.i = 0
+        encoder = self.define_block(self.encoder_dims)
+        decoder = self.define_block(self.decoder_dims)
+        # lag_predictor = self.define_block(self.decoder_dims)
+
+        self.var = nn.parameter.Parameter(torch.ones((self.gene_dim,1)), requires_grad=True)
         
         self.epsilon_theta = nn.ModuleDict(
             {'encoder': nn.Sequential(OrderedDict(encoder)), 
@@ -445,48 +451,82 @@ class Epsilon_CVAE(Epsilon_CAE):
         
         self.var_act = nn.Softplus()
         self.loss_fn = nn.GaussianNLLLoss()
+        
+        # important !
+        self.variational = True
 
     def reparameterize(self, mu, logvar):
         q_v = self.var_act(logvar) + 1e-4
-        dist = Normal(mu, q_v.sqrt())
+        dist = db.Normal(mu, q_v.sqrt())
         z = dist.rsample()
         return z
 
-    def encode(self, x_0, t_0, batch = None, c = None):
+    def encode(self,x_0, c, batch = None, t_0 = None):
         # input
-        input_dict= self._get_model_input(x_0, t_0, batch, c)
+        input_dict= self._get_model_input(x_0, c, batch,  t_0)
         x_ = input_dict['full_input']
         c_emb = input_dict['condition']
         c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
         
         # encode
         n_latent = self.encoder_dims[-1] // 2
-        mu_logvar = self.epsilon_theta['encoder'](x_)
+        inference_out = self.epsilon_theta['encoder'](x_)
 
-        mu = mu_logvar[:, :n_latent]
-        logvar = mu_logvar[:, n_latent:]    
+        z_mean = inference_out[:, :n_latent]
+        z_vars = self.var_act(inference_out[:, n_latent:])
         
-        z = self.reparameterize(mu, logvar)
+        z = self.reparameterize(z_mean, z_vars) # latent
 
         z_c = z + c_emb
         z_c_act = self.act_fn()(z_c)
-        return {"z":z, "z_c":z_c_act, "c":c_emb}
+        return {"z":z, "z_c":z_c_act, "c":c_emb, 'q_m':z_mean, 'q_v':z_vars}
     
     def forward(self, x_0, c, batch = None, t_0 = None):
-        # encode
+        """
+        the forwar process for variational vae;
+        Encode : inference
+        Decode : generative model
+        """
+        # encode : q
         z_dict = self.encode(x_0, c, batch, t_0)
         z_c_act = z_dict['z_c']
+        z_mean = z_dict['q_m']
+        z_vars = z_dict['q_v']
 
-        # decode
+        # decode : p
         n_gene = self.gene_dim
         out = self.epsilon_theta['decoder'](z_c_act)
         mu = out[:, :n_gene]
-        var = out[:, n_gene:]
-        return mu, var
+        var_ = self.var_act(self.var)
+        # var = var_.pow(2)
 
-    def compute_loss(self, DeltaX, mu_var):
-        mu, var = mu_var
-        return self.loss_fn(mu, DeltaX, var)
+        var_ = self.var_act(self.var)
+        var = var_.T.expand(mu.shape)
+        return mu, var, z_mean, z_vars
+
+    def compute_loss(self, DeltaX, gen_infer_output):
+        mu, var, z_mean, z_vars = gen_infer_output
+        recon_loss = self.loss_fn(mu, DeltaX, var)
+
+        basal_distribution = db.Normal(z_mean, z_vars.sqrt())
+        dist_pz = db.Normal(
+            torch.zeros_like(basal_distribution.loc), torch.ones_like(basal_distribution.scale)
+        )
+        kl_loss = db.kl.kl_divergence(basal_distribution, dist_pz).sum(-1)
+        return recon_loss + self.kl_weight * kl_loss.mean()
+    
+class Epsilon_CVAE_adv(Epsilon_CVAE):
+    def __init__(self, 
+                gene_dim: int, 
+                time_emb_dim : int,
+                n_base_perturbs : int,
+                condition_emb_dim : int,
+                use_batch_index : bool,
+                hidden_size: list = [256,128,256],
+                activation : Union[str, nn.Module] = "Mish",
+                pretrained_embeddings : nn.Module = None,
+                ) :
+        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, hidden_size, activation, pretrained_embeddings)
 
 # TODO:
 class Epsilon_Linear_token_net(Epsilon_Linear):

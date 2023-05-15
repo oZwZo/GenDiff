@@ -13,9 +13,10 @@ from src import _reader
 from src import _sampler
 from src import _configure
 from src import _learner
+from src import PATH
+
 import scvelo
 from tqdm import tqdm
-import PATH
 import anndata as ad
 from anndata import AnnData 
 import seaborn as sns
@@ -68,8 +69,8 @@ def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10,de
     device = device if torch.cuda.is_available else 'cpu'
 
     # config
-    model_config = os.path.join(PATH.main_dir, yaml_path)
-    configs = _configure.Yaml_configurer(model_config)
+    model_config_path = os.path.join(PATH.main_dir, yaml_path)
+    configs = _configure.Yaml_configurer(model_config_path)
     
     # dataloaders
     dl_ls = dl_from_config(configs, shuffle=False)
@@ -86,12 +87,11 @@ def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10,de
             )
 
     # models
-    eps_net = get_model_from_config(configs, device)
-    Sampler_pl_module = eval("_learner."+configs.sampler_class)
-
-    v0_equi_diff = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to(device)
-    v0_equi_diff.eval();
-
+    # eps_net = get_model_from_config(configs, device)
+    # Sampler_pl_module = eval("_learner."+configs.sampler_class)
+    # v0_equi_diff = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to(device)
+    pl_model = reload_sampler(model_config_path).to(device)
+    pl_model.eval();
 
     data_iterators = [iter(dl) for dl in dl_ls]
 
@@ -108,9 +108,15 @@ def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10,de
                     X = X.to(device)
                     t = t.to(device)
                 
-                z_dict = v0_equi_diff.model.encode(X, t , None , c)
-                delta_x = v0_equi_diff.model(X, t , None , c)
-                
+                z_dict = pl_model.model.encode(X, c , None , t)
+                output = pl_model.model(X, c , None , t)
+
+                if pl_model.model.variational:
+                    delta_x = output[0]
+                else:
+                    delta_x = output
+                    
+            
                 Delta_X.append(delta_x.cpu().numpy())
                 zc_ls.append(z_dict['z_c'].cpu().numpy())
                 z_ls.append(z_dict['z'].cpu().numpy())
@@ -136,7 +142,7 @@ def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10,de
 
     # sc.pl.umap(adata_zc, color=['discrete_time', 'assignment'])
     print('\nFinished!')
-    return adata_zc[origin_idx,:].copy(), v0_equi_diff
+    return adata_zc[origin_idx,:].copy(), pl_model
 
 def perturbation(yaml_path, ckpt_path, perturbation , n_neighbors = 10,device=3 , return_adata = False, compute_neighbor = False, compute_umap = False):
     
@@ -144,8 +150,8 @@ def perturbation(yaml_path, ckpt_path, perturbation , n_neighbors = 10,device=3 
     device = device if torch.cuda.is_available else 'cpu'
 
     # config
-    model_config = os.path.join(PATH.main_dir, yaml_path)
-    configs = _configure.Yaml_configurer(model_config)
+    model_config_path = os.path.join(PATH.main_dir, yaml_path)
+    configs = _configure.Yaml_configurer(model_config_path)
     
     # dataloaders
     dl_ls = dl_from_config(configs, shuffle=False)
@@ -163,17 +169,17 @@ def perturbation(yaml_path, ckpt_path, perturbation , n_neighbors = 10,device=3 
     c_perturb = adata.uns['unique_token_dict'][perturbation] 
     
     
-    
     v0_ckpt = get_ckpt_path(
         ckpt_path
             )
 
     # models
-    eps_net = get_model_from_config(configs, device)
-    Sampler_pl_module = eval("_learner."+configs.sampler_class)
+    # eps_net = get_model_from_config(configs, device)
+    # Sampler_pl_module = eval("_learner."+configs.sampler_class)
+    # pl_model = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net)
 
-    v0_equi_diff = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to(device)
-    v0_equi_diff.eval();
+    pl_model = reload_sampler(model_config_path).to(device)
+    pl_model.eval();
 
 
     data_iterators = [iter(dl) for dl in dl_ls]
@@ -191,8 +197,12 @@ def perturbation(yaml_path, ckpt_path, perturbation , n_neighbors = 10,device=3 
                 X = X.to(device)
                 t = t.to(device)
                 
-                z_dict = v0_equi_diff.model.encode(X, t , None , c_p)
-                delta_x = v0_equi_diff.model(X, t , None , c_p)
+                z_dict = pl_model.model.encode(X, c_p , None , t)
+                output = pl_model.model(X, c_p , None , t)
+                if pl_model.model.variational:
+                    delta_x = output[0]
+                else:
+                    delta_x = output
                 
                 Delta_X.append(delta_x.cpu().numpy())
                 zc_ls.append(z_dict['z_c'].cpu().numpy())
@@ -221,7 +231,59 @@ def perturbation(yaml_path, ckpt_path, perturbation , n_neighbors = 10,device=3 
 
     # sc.pl.umap(adata_zc, color=['discrete_time', 'assignment'])
     if return_adata:
-        return adata_zc[origin_idx,:].copy(), v0_equi_diff
+        return adata_zc[origin_idx,:].copy(), pl_model
+    else:
+        return adata_zc[origin_idx,:].obsm['delta_x']
+
+def sample_Delta_X(yaml_path, sampling_repeat=100):
+
+    # config
+    model_config_path = os.path.join(PATH.main_dir, yaml_path)
+    configs = _configure.Yaml_configurer(model_config_path)
+    
+    # dataloaders
+    dl_ls = dl_from_config(configs, shuffle=False)
+    adata_idx = np.concatenate([dl.dataset.adata.obs.index for dl in dl_ls], axis=0)
+
+    adata = sc.read(configs.anndata_path)
+    origin_idx = adata.obs.index
+    n = adata.shape[0]
+
+    data_iterators = [iter(dl) for dl in dl_ls]
+
+    Delta_X_M = []
+    for r in tqdm(range(sampling_repeat)):
+        Delta_X_ls = []
+        for iterator in data_iterators:
+            for X, batch_idx, c, delta_x, t in tqdm(iterator):
+                Delta_X_ls.append(delta_x.cpu().numpy())
+            Delta_X_ay = np.stack(Delta_X_ls)
+        Delta_X_M.append(Delta_X_ay)
+    Delta_X_M = np.stack(Delta_X_M).mean(axis=0)
+
+    # save the representatio to adata
+    adata_zc = adata[adata_idx].copy()
+
+    # prediction
+    adata_zc.obsm['delta_x'] = np.concatenate(Delta_X, axis=0)
+
+    # embedding
+    adata_zc.obsm['z_c'] = np.concatenate(zc_ls, axis=0)
+    adata_zc.obsm['z'] = np.concatenate(z_ls, axis=0)
+    adata_zc.obsm['c'] = np.concatenate(c_ls, axis=0)
+
+    # sc.pp.neighbors(adata_zc, n_neighbors = 35,  metric='cosine', method='umap', key_added='Z_c' ,use_rep='Z_c', )
+    if compute_neighbor:
+        print("\n"+"cell embedding extracted, ready to computing KNN...")
+        sc.pp.neighbors(adata_zc, n_neighbors = n_neighbors,  key_added=use_rep ,use_rep=use_rep, )
+    
+    if compute_umap:
+        print("\n"+"KNN constructed, computing UMAP...")
+        sc.tl.umap(adata_zc, min_dist = 0.5, maxiter=500, spread=1, random_state=0, neighbors_key=use_rep)
+
+    # sc.pl.umap(adata_zc, color=['discrete_time', 'assignment'])
+    if return_adata:
+        return adata_zc[origin_idx,:].copy(), pl_model
     else:
         return adata_zc[origin_idx,:].obsm['delta_x']
 
@@ -250,9 +312,9 @@ def reload_sampler(yaml_file):
         eps_net = torch.load(save_path, map_location='cpu')
         print(f"epsilon net is loaded from \n{save_path}")
     else:
-        eps_net = Module_Class(**module_kw).to(device)
+        eps_net = Module_Class(**module_kw).to('cpu')
     
-    Samper_Class = eval("_sampler.%s" %configs.sampler_class)
+    Samper_Class = eval("_learner.%s" %configs.sampler_class)
     sampler_kwargs = configs.sampler_kwargs
     sampler_kwargs['model'] = eps_net
 

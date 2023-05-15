@@ -29,24 +29,30 @@ class AE_learner(pl.LightningModule):
     base sampler algorithm
 
     """
-    def __init__(self, model, lr):
+    def __init__(self, model, lr=0.0001):
         r"""
         :param model: is the model to predict noise $\epsilon_\text{cond}(x_t, c)$
         """
         super().__init__()
         self.model = model # epsilon_theta 
         self.lr = lr
-        self.variational_vae = self.model.decoder_dims[-1] == self.model.gene_dim*2
+
+        n_gene = self.model.gene_dim
+        self.variational_vae = self.model.variational
 
         # r2 metrics
-        self.train_r2_score = torchmetrics.R2Score()
-        self.val_r2_score = torchmetrics.R2Score()
-        self.test_r2_score = torchmetrics.R2Score()
+        self.train_r2_score = torchmetrics.R2Score(num_outputs = n_gene)
+        self.val_r2_score = torchmetrics.R2Score(num_outputs = n_gene)
+        self.test_r2_score = torchmetrics.R2Score(num_outputs = n_gene)
+        self.train_corr = torchmetrics.PearsonCorrCoef(num_outputs = n_gene)
+        self.val_corr = torchmetrics.PearsonCorrCoef(num_outputs = n_gene)
+        self.test_corr = torchmetrics.PearsonCorrCoef(num_outputs = n_gene)
 
         # sign accuracy
-        self.train_acc = torchmetrics.Accuracy(task='multilabel')
-        self.val_acc = torchmetrics.Accuracy(task='multilabel')
-        self.test_acc = torchmetrics.Accuracy(task='multilabel')
+        MA = torchmetrics.classification.MultilabelAccuracy
+        self.train_acc = MA(num_labels = n_gene)
+        self.val_acc = MA(num_labels = n_gene)
+        self.test_acc = MA(num_labels = n_gene)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
@@ -54,7 +60,7 @@ class AE_learner(pl.LightningModule):
 
     def forward(self, batch_data):
         X, batch_idx, condition_idx, Delta_X, degree = batch_data
-        return self.model(X, batch_idx, condition_idx, Delta_X, degree)
+        return self.model(X, condition_idx, batch_idx, degree) # order :x, c, b, t
     
     def training_step(self, train_batch, batch_idx):
         # get data from batch
@@ -62,9 +68,9 @@ class AE_learner(pl.LightningModule):
         DeltaX = self.model.get_DeltaX(train_batch)   
 
         if self.variational_vae:  # variational AEs output 2 vectors
-            mu_var = self.forward(train_batch)
-            DeltaX_pred = mu_var[0]
-            loss = self.model.compute_loss(DeltaX, mu_var)
+            gen_infer_output = self.forward(train_batch)
+            DeltaX_pred = gen_infer_output[0]
+            loss = self.model.compute_loss(DeltaX, gen_infer_output)
         else:
             DeltaX_pred = self.forward(train_batch)
             loss = self.model.compute_loss(DeltaX, DeltaX_pred)
@@ -72,9 +78,10 @@ class AE_learner(pl.LightningModule):
         # other metrics
         with torch.no_grad():
             r2 = self.train_r2_score(DeltaX,DeltaX_pred)
+            corr = self.train_corr(DeltaX,DeltaX_pred).mean()
             acc = self.train_acc(DeltaX>0 ,DeltaX_pred>0)
 
-        metrics = {'train_loss':loss, 'train_r2':r2, 'train_acc':acc}
+        metrics = {'train_loss':loss, 'train_r2':r2, 'train_corr':corr, 'train_acc':acc}
 
         self.log_dict(metrics)
         return loss
@@ -85,18 +92,19 @@ class AE_learner(pl.LightningModule):
         DeltaX = self.model.get_DeltaX(val_batch)   
         
         if self.variational_vae:  # variational AEs output 2 vectors
-            mu_var = self.forward(train_batch)
+            mu_var = self.forward(val_batch)
             DeltaX_pred = mu_var[0]
             loss = self.model.compute_loss(DeltaX, mu_var)
         else:
-            DeltaX_pred = self.forward(train_batch)
+            DeltaX_pred = self.forward(val_batch)
             loss = self.model.compute_loss(DeltaX, DeltaX_pred)
 
         with torch.no_grad():
             r2 = self.val_r2_score(DeltaX,DeltaX_pred)
+            corr = self.val_corr(DeltaX,DeltaX_pred).mean()
             acc = self.val_acc(DeltaX>0 ,DeltaX_pred>0)
 
-        metrics = {'val_loss':loss, 'val_r2':r2, 'val_acc':acc}
+        metrics = {'val_loss':loss, 'val_r2':r2, 'val_corr':corr,'val_acc':acc}
 
         self.log_dict(metrics)
         return metrics
@@ -106,19 +114,20 @@ class AE_learner(pl.LightningModule):
         DeltaX = self.model.get_DeltaX(test_batch)   
 
         if self.variational_vae:  # variational AEs output 2 vectors
-            mu_var = self.forward(train_batch)
+            mu_var = self.forward(test_batch)
             DeltaX_pred = mu_var[0]
             loss = self.model.compute_loss(DeltaX, mu_var)
         else:
-            DeltaX_pred = self.forward(train_batch)
+            DeltaX_pred = self.forward(test_batch)
             loss = self.model.compute_loss(DeltaX, DeltaX_pred)
 
         # metrics value
         with torch.no_grad():
             r2 = self.test_r2_score(DeltaX,DeltaX_pred)
+            corr = self.test_corr(DeltaX,DeltaX_pred).mean()
             acc = self.test_acc(DeltaX>0 ,DeltaX_pred>0)
 
-        metrics = {'test_loss':loss, 'test_r2':r2, 'test_acc':acc}
+        metrics = {'test_loss':loss, 'test_r2':r2, 'test_corr':corr, 'test_acc':acc}
 
         self.log_dict(metrics)
         return metrics
@@ -276,7 +285,7 @@ class DiffusionSampler_base(pl.LightningModule):
         return self.p_sample_loop(*args, **kwargs)
 
     def forward(self, x_t, t, batch , c, *args, **kwargs):
-        return self.model(x_t, t, batch , c, *args, **kwargs)
+        return self.model(x_t, c, batch , t, *args, **kwargs)
     
     def p_loss(self, x_0, t, noise=None,  batch=None, c=None, *args, **kwargs):
         r"""

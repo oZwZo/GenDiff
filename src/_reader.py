@@ -6,7 +6,7 @@ from anndata import AnnData
 from torch import nn
 import numpy as np
 import scanpy as sc
-
+from scipy.sparse.csgraph import dijkstra
 
 def demultiplex_token(adata, perturb_col='condition', max_multiplexing=2, 
                         delimiter="+", control_pert='ctrl'):
@@ -150,7 +150,7 @@ class Condition_AnnDataSet(AnnDataSet):
                 max_multiplexing : int = 2,
                 use_batch_index : bool = False,
                 exp_batch_key : str = 'batch', 
-                delimiter : str ="+",
+                delimiter : str = "+",
                 layers:str ='counts', 
                 split_key:str = 'split', 
                 which_set: str ='train'):
@@ -206,8 +206,7 @@ class Condition_AnnDataSet(AnnDataSet):
 
         return exp_mat, batch_idx, condition_idx, [], [] # noise and t is empty
 
-        
-class Diffuse_Dataset(Condition_AnnDataSet):
+class Traverse_Dataset(Condition_AnnDataSet):
     def __init__(self, 
                 AnnData : AnnData, 
                 unique_token_dict : dict,
@@ -360,24 +359,417 @@ class Diffuse_Dataset(Condition_AnnDataSet):
         else:
             return exp_mat, batch_idx, condition_idx, noise, t
 
-class Root_Diffuse(Diffuse_Dataset):
+        
+class Diffuse_Dataset(Condition_AnnDataSet):
     def __init__(self, 
                 AnnData : AnnData, 
-                root_cell : Union[int, str, np.ndarray],
-                unique_token_dict : Union[dict, str],
+                unique_token_dict : dict,
                 condition_key : str = 'condition',
-                max_multiplexing : int = 2,
+                max_multiplexing : int = 1,
                 use_batch_index : bool = False,
                 exp_batch_key : str = 'batch', 
-                delimiter : str ="+",
+                pseudotime_key : str = "dpt_pseudotime",
+                neighbor_key : str = "",
+                n_neighbor : int = 15,
+                delimiter : str ="",
                 layers:str ='counts', 
                 split_key:str = 'split', 
                 which_set: str ='train',
+                max_degree: int = 5,
+                search_strategy: str = 'traverse',
+                check_samples = False
                 ):
-        self.super().__init__(AnnData, unique_token_dict, condition_key, max_multiplexing, 
-                            use_batch_index, exp_batch_key, pseudotime_key, neighbor_key, 
-                            n_neighbor, delimiter, layers, split_key, which_set, max_degree,
-                            search_strategy, check_samples)
+        super().__init__(AnnData, unique_token_dict, condition_key,max_multiplexing, 
+                            use_batch_index, exp_batch_key, delimiter, layers, split_key, which_set)
+        
+        self.k = n_neighbor
+        self.pseudotime_key = pseudotime_key
+        self.max_degree = max_degree
+        self.search_strategy = search_strategy
+        self.check_samples = check_samples
+        
+        ###  very important !!!!
+        ##   currently set to 3
+        #    
+        self.free_search_degree = 3
+
+        self.iroot = self.adata.uns['iroot']
+        self.root_x = torch.from_numpy(self.adata_raw.X[self.iroot])
+
+        self.connectivities = self.adata.obsp[neighbor_key+'connectivities']
+        self.connectivities = self._to_dense(self.connectivities)
+
+        self.distance = self.adata.obsp[neighbor_key+'distances']
+        # self.distance = self._to_dense(self.distance)
+
+
+    @property
+    def T(self):
+        """
+        generate discreted timepoint from pseudo-time
+        """
+        if "discrete_time" not in self.adata.obs_keys():
+            def discrete_time(x):
+                x = int(x*250)
+                mid_err = np.random.randint(-2,2) # smooth the time
+                tail_err = np.random.randint(0,10)
+                return min(max(0,x+mid_err), 200-tail_err)
+
+            self.adata.obs['discrete_time'] = self.adata.obs[self.pseudotime_key].apply(discrete_time)
+
+        return self.adata.obs['discrete_time'].values
+
+    def traverse_neighbor(self, knn_idx):
+        k = -1*self.k 
+        # random walk
+        next_degree_knn = []
+        for i_d in knn_idx:
+            neighbor = np.argpartition(self.connectivities[i_d], k)[k:].tolist()
+            next_degree_knn.extend(neighbor)
+        
+        # all neighbor visited to the current degree
+
+        knn_idx_d_plus1 = knn_idx + next_degree_knn
+        # knn_idx_d_plus1 = np.unique(knn_idx_d_plus1).astype(int)
+        knn_idx_d_plus1 = np.unique(next_degree_knn).astype(int).tolist()
+        return knn_idx_d_plus1
+    
+    def _sample_by_distance(self, dist_array, candidate_idx):
+        """
+        based on the knn distance, sample the closest cell 
+            P ~ 
+        """
+        dist = dist_array[candidate_idx]
+        where_inf = np.isinf(dist)
+        if np.any(where_inf):
+            try:
+                next_max = dist[~where_inf].max()
+                dist = np.where(where_inf, next_max, dist)
+            except ValueError:
+                dist = np.zeros_like(dist)
+
+        knn_p = dist.max() - dist + 0.1*dist.min()
+        if knn_p.sum() > 0:
+            p = knn_p / knn_p.sum() # normalized
+        else:
+            p = None 
+        neighbor_idx = np.random.choice(candidate_idx, p=p)
+        return neighbor_idx
+    
+    def expand_neighbor(self, i, n_degree):
+        k = -1*self.k * (1+n_degree)
+        knn_idx = np.argpartition(self.connectivities[i], k)[k:].astype(int)
+        return knn_idx
+    
+    def _diffuse_keepi(self, i, c_i, t_i):
+        """
+        the Key function defines the noise sampling process 
+        given the starting point i
+        """
+        pass_1 = 0
+        pass_2 = 0
+        n_degree = 0
+        knn_idx = np.array([i])
+
+
+        while pass_1*pass_2==0 and n_degree < self.max_degree:
+            
+            # if n_degree > self.free_search_degree:   # only under this degree can we expand knn without any constraints
+            #     knn_idx = pass_2_idx
+        
+            knn_idx = self.traverse_neighbor(knn_idx) if self.search_strategy == 'traverse' else self.expand_neighbor(i, n_degree)
+
+            # 1 : neighbor with the same condition
+            knn_c = self.multipx_conditions[knn_idx]
+            if c_i in knn_c:
+                pass_1_idx = np.array(knn_idx)[knn_c == c_i]
+                pass_1 = 1
+            else:
+                pass_1_idx = knn_idx
+
+            # 2 : neighbor with bigger pseudo-time
+            knn_t = self.T[pass_1_idx]
+            if np.any(knn_t > t_i):
+                pass_2_idx = np.array(pass_1_idx)[knn_t > t_i]
+                pass_2 = 1
+
+            else:
+                pass_2_idx = pass_1_idx
+            n_degree += 1
+                 
+        # sampled by distance
+
+        knn_p = self.connectivities[i,pass_2_idx]
+        p = knn_p / knn_p.sum() if knn_p.sum() != 0 else None
+
+        if len(final_index) == 0:
+            final_index = knn_idx
+            neighbor_idx = i
+        else:
+            neighbor_idx = self._sample_by_distance(self.distance, final_index)
+        return neighbor_idx, (pass_1,pass_1_idx), (pass_2,pass_2_idx)
+
+    def _diffuse_neighbor(self, i, c_i, t_i):
+        """
+        the Key function defines the noise sampling process 
+        given the starting point i
+        """
+        pass_1 = 0
+        pass_2 = 0
+        n_degree = 0
+        knn_idx = np.array([i])
+
+        knn_dict = {'0':[i]}
+        for d in range(self.max_degree):
+            knn_next_degree = self.traverse_neighbor(knn_dict[str(d)])
+            knn_dict[str(d+1)] = knn_next_degree
+        searched = np.concatenate([knn_dict[str(d+1)] for d in range(self.max_degree)])
+        
+        knn_idx = searched
+        knn_c = self.multipx_conditions[knn_idx]
+        knn_t = self.T[knn_idx]
+
+        # 1 : neighbor with the same condition
+        if c_i in knn_c:
+            pass_1_idx = np.array(knn_idx)[knn_c == c_i]
+            pass_1 = 1
+        else:
+            pass_1_idx = knn_idx
+
+        # 2 : neighbor with bigger pseudo-time
+        if np.any(knn_t > t_i):
+            pass_2_idx = np.array(knn_idx)[knn_t > t_i]
+            pass_2 = 1
+        else:
+            pass_2_idx = knn_idx
+        
+        if pass_1 * pass_2 == 1:
+            final_index = np.intersect1d(pass_1_idx, pass_2_idx)
+        elif pass_2 == 0:
+            final_index = []
+        else:
+            # pass_1 == 0 but pass_2
+            final_index = pass_2_idx
+        
+        if len(final_index) == 0:
+            final_index = knn_idx
+            neighbor_idx = i
+        else:
+            neighbor_idx = self._sample_by_distance(self.distance[i].A.flatten(), final_index)
+        return neighbor_idx, (pass_1,pass_1_idx), (pass_2,pass_2_idx)
+
+
+    def __getitem__(self, i):
+        """
+        return x , b, c, noise, t in a mini-batch
+        """
+        X = self.X[i]
+        c_string = self.multipx_conditions[i]
+        t = self.T[i]
+        neighbor_idx, (pass_1,pass_1_idx), (pass_2,pass_2_idx)  = self._diffuse_neighbor(i, c_string, t)
+
+        split_tokens = c_string.split(self.delimiter)
+        n_tokens = len(split_tokens)
+
+        # we pad the token list to maximal muultiplexing 
+        # pad with the null key 
+        if len(split_tokens) < self.max_multiplexing:
+            split_tokens += [self.null_cond_key]*(self.max_multiplexing - n_tokens)
+
+        condition_idx = np.array([self.unique_token_dict[token] for token in split_tokens])
+
+        if self.use_batch_index:
+            batch_idx = self.exp_batch[i]
+        
+        else:
+            batch_idx=[]
+
+        X = self.X[i]
+        delta_X = self.X[neighbor_idx] - X
+
+        if self.check_samples:
+            return X, batch_idx, condition_idx, delta_X, t, pass_1,pass_1_idx, pass_2,pass_2_idx
+        
+        # expression matrix  , expreimental batch , perturbation [c1, c2, c3..], expression change, t: discreted t
+        else:
+            return X, batch_idx, condition_idx, delta_X, t
+
+class Path_Diffuse(Diffuse_Dataset):
+    def __init__(self, 
+                AnnData : AnnData, 
+                unique_token_dict : dict,
+                condition_key : str = 'condition',
+                max_multiplexing : int = 1,
+                use_batch_index : bool = False,
+                exp_batch_key : str = 'batch', 
+                pseudotime_key : str = "dpt_pseudotime",
+                neighbor_key : str = "",
+                n_neighbor : int = 15,
+                delimiter : str ="",
+                layers:str ='counts', 
+                split_key:str = 'split', 
+                which_set: str ='train',
+                max_degree: int = 5,
+                search_strategy: str = 'traverse',
+                check_samples = False
+                ):
+        super().__init__(AnnData, unique_token_dict=unique_token_dict, condition_key=condition_key, 
+                            max_multiplexing=max_multiplexing,  pseudotime_key=pseudotime_key,
+                            neighbor_key=neighbor_key, n_neighbor=n_neighbor,
+                            use_batch_index=use_batch_index, exp_batch_key=use_batch_index,
+                            delimiter = delimiter, layers=layers, split_key=split_key, which_set=which_set,
+                            max_degree=max_degree, search_strategy=search_strategy, check_samples=check_samples
+                            )
+    
+
+    def _neighbor_path(self, i, c_i, t_i):
+        """
+        The sampling process given cell i, we choose the other cell to construct a training pair.
+        Here we define each cell can only belongs to six different scenario:
+            - around_root
+            - Orphan condition
+            - Sample backward by condition
+            - Sample forward by time
+            - Single future state
+            - Sample with condition and time
+        """
+        # free travese steps
+        knn_dict = {'0':[i]}
+        Around_root = False
+        for d in range(self.max_degree):
+            knn_next_degree = self.traverse_neighbor(knn_dict[str(d)])
+            knn_dict[str(d+1)] = knn_next_degree
+            if self.iroot in knn_next_degree:
+                Around_root = True
+
+
+        if Around_root:
+            neighbor_idx = self.iroot
+            note = 'around_root'
+            step = self.adata.obs['Depth_from_root'].values[i]
+
+        else:
+            # find path
+            same_class_idx = np.where(self.multipx_conditions == c_i)[0]
+            gtr_t_idx = np.where(self.T > t_i)[0]
+            meet_both = np.intersect1d(same_class_idx, gtr_t_idx)
+
+            dist_array = dijkstra(self.distance, indices=i,
+                                    limit=1000, return_predecessors=False)
+            depth_from_i = dijkstra(self.distance, indices=i, unweighted=True,
+                                    limit=1000, return_predecessors=False)
+
+            if len(meet_both) == 0:
+                
+                if len(same_class_idx) == 1:
+                    neighbor_idx = self.iroot
+                    step = self.adata.obs['Depth_from_root'].values[i]
+                    note = 'Orphan condition'
+
+                elif len(gtr_t_idx) > 0:
+                    # use future cells
+                    neighbor_idx = self._sample_by_distance(dist_array, gtr_t_idx)
+                    step = depth_from_i[neighbor_idx]
+                    note = 'Sample forward by time'
+
+                else:
+                    # i is the one with biggest time
+                    neighbor_idx = self._sample_by_distance(dist_array, same_class_idx)
+                    note = 'Sample backward by condition'
+                    step = depth_from_i[neighbor_idx]
+                
+
+            elif len(meet_both) == 1:
+                neighbor_idx = meet_both[0]
+                note = 'Single future state'
+                step = depth_from_i[neighbor_idx]
+                
+            else:
+                # the idea situation
+                neighbor_idx = self._sample_by_distance(dist_array, meet_both)
+
+                step = depth_from_i[neighbor_idx]
+                note = 'Sample with condition and time'
+               
+        return neighbor_idx, note, step
+
+
+    def __getitem__(self, i):
+
+        c_string = self.multipx_conditions[i]
+        t = self.T[i]
+        neighbor_idx, note, step  = self._neighbor_path(i, c_string, t)
+
+        split_tokens = c_string.split(self.delimiter)
+        n_tokens = len(split_tokens)
+
+        if note in ['around_root', 'Orphan condition', 'Sample backward by condition']:
+            # use root or backward
+            
+            X = self.root_x
+            delta_X = (self.X[i] - X) 
+            t = 0
+            
+        elif 'Orphan condition' in note:
+            X = self.adata_raw.X[neighbor_idx]
+            delta_X = (self.X[i] - X) 
+            delta_X /= step
+
+        elif note in ['Sample forward by time', 'Single future state', 'Sample with condition and time']:
+            X = self.X[i]
+            delta_X = (X - self.X[neighbor_idx]) 
+        
+        else:
+            raise ValueError("Undefined scenario")
+        
+        split_tokens = c_string.split(self.delimiter)
+        n_tokens = len(split_tokens)
+
+        # we pad the token list to maximal muultiplexing 
+        # pad with the null key 
+        if len(split_tokens) < self.max_multiplexing:
+            split_tokens += [self.null_cond_key]*(self.max_multiplexing - n_tokens)
+        condition_idx = np.array([self.unique_token_dict[token] for token in split_tokens])
+
+        if self.use_batch_index:
+            batch_idx = self.exp_batch[i]
+        else:
+            batch_idx=[]
+        
+        if self.check_samples:
+            return torch.from_numpy(X), batch_idx, torch.from_numpy(condition_idx), torch.from_numpy(delta_X), torch.from_numpy(t), note, step
+        else:
+            return X, batch_idx, condition_idx, delta_X, t
+
+            
+
+class Root_Diffuse(Diffuse_Dataset):
+    def __init__(self, 
+                AnnData : AnnData, 
+                unique_token_dict : dict,
+                root_cell : Union[int, str, np.ndarray] = None,
+                condition_key : str = 'condition',
+                max_multiplexing : int = 1,
+                use_batch_index : bool = False,
+                exp_batch_key : str = 'batch', 
+                pseudotime_key : str = "dpt_pseudotime",
+                neighbor_key : str = "",
+                n_neighbor : int = 15,
+                delimiter : str ="",
+                layers:str ='counts', 
+                split_key:str = 'split', 
+                which_set: str ='train',
+                max_degree: int = 5,
+                search_strategy: str = 'traverse',
+                check_samples = False
+                ):
+        super().__init__(AnnData, unique_token_dict=unique_token_dict, condition_key=condition_key, 
+                            max_multiplexing=max_multiplexing,  pseudotime_key=pseudotime_key,
+                            neighbor_key=neighbor_key, n_neighbor=n_neighbor,
+                            use_batch_index=use_batch_index, exp_batch_key=use_batch_index,
+                            delimiter = delimiter, layers=layers, split_key=split_key, which_set=which_set,
+                            max_degree=max_degree, search_strategy=search_strategy, check_samples=check_samples
+                            )
 
 
         self.root_cell = root_cell
@@ -389,11 +781,14 @@ class Root_Diffuse(Diffuse_Dataset):
         """
         from the given cell index, trace the control cell expression.
         """
-        if type(root_cell) == str:
-            self.iroot = np.where(self.adata_raw.obs_names == root_cell_idex)[0]
+        if root_cell is None:
+            self.iroot = self.adata_raw.uns['iroot']
+            self.root_x = self.adata_raw.X[self.iroot]
+        elif type(root_cell) == str:
+            self.iroot = np.where(self.adata_raw.obs_names == root_cell)[0]
             self.root_x = self.adata_raw.X[self.iroot]
         elif type(root_cell) == int:
-            self.iroot = root_cell_idex
+            self.iroot = root_cell
             self.root_x = self.adata_raw.X[self.iroot]
         elif type(root_cell) == np.ndarray():
             self.iroot = None
@@ -406,8 +801,75 @@ class Root_Diffuse(Diffuse_Dataset):
         """
         return x , b, c, noise, t in a mini-batch
         """
-        exp_mat = self.X[i]
+        X = self.X[i]
         c_string = self.multipx_conditions[i]
+        split_tokens = c_string.split(self.delimiter)
+        n_tokens = len(split_tokens)
+
+        # we pad the token list to maximal muultiplexing 
+        # pad with the null key 
+        if len(split_tokens) < self.max_multiplexing:
+            split_tokens += [self.null_cond_key]*(self.max_multiplexing - n_tokens)
+        condition_idx = np.array([self.unique_token_dict[token] for token in split_tokens])
+        
+        # batch
+        if self.use_batch_index:
+            batch_idx = self.exp_batch[i]
+        else:
+            batch_idx=[]
+
+        # select by T
+        degree = self.Degree[i]
+        Delta_X = (self.X[i] - self.root_x) #/ degree
+
+        # expression matrix X , expreimental batch , perturbation [c1, c2, c3..], noise -> delta X, t: discreted t
+        return X, batch_idx, condition_idx, Delta_X, degree
+
+
+class Fix_Degree_Diffuse(Diffuse_Dataset):
+    def __init__(self, 
+                AnnData : AnnData, 
+                unique_token_dict : dict,
+                condition_key : str = 'condition',
+                max_multiplexing : int = 1,
+                use_batch_index : bool = False,
+                exp_batch_key : str = 'batch', 
+                pseudotime_key : str = "dpt_pseudotime",
+                neighbor_key : str = "",
+                n_neighbor : int = 15,
+                delimiter : str ="",
+                layers:str ='counts', 
+                split_key:str = 'split', 
+                which_set: str ='train',
+                max_degree: int = 5,
+                search_strategy: str = 'traverse',
+                check_samples = False
+                ):
+        self.super().__init__(AnnData, unique_token_dict, condition_key, max_multiplexing, 
+                            use_batch_index, exp_batch_key, pseudotime_key, neighbor_key, 
+                            n_neighbor, delimiter, layers, split_key, which_set, max_degree,
+                            search_strategy, check_samples)
+    
+    def traverse_next_degree_neighbor(self, i, c_string, dpt):
+        """
+        
+        """
+
+        idx_ci = np.where(self.multipx_conditions == c_string )[0]
+        dpt_ci = self.T[idx_ci]
+        dpt_gtr = (dpt_ci > dpt)[idx_ci]
+
+        
+        return knn_idx_d_plus1
+
+    def _diffuse_neighbor(self, i, c_i, t_i):
+        """
+        the Key function defines the noise sampling process 
+        given the starting point i
+        """
+        X = self.X[i]
+        c_string = self.multipx_conditions[i]
+        dpt = self.T[i]
         split_tokens = c_string.split(self.delimiter)
         n_tokens = len(split_tokens)
 
@@ -428,84 +890,11 @@ class Root_Diffuse(Diffuse_Dataset):
         # select by T
         degree = self.Degree[i]
 
-        Delta_X = (self.X[neighbor_idx] - self.root_x) / degree
+        Delta_X = (self.X[i] - self.root_x) / degree
+        
 
         # expression matrix X , expreimental batch , perturbation [c1, c2, c3..], noise -> delta X, t: discreted t
         return X, batch_idx, condition_idx, Delta_X, degree
-
-
-class Fix_Degree_Diffuse(Diffuse_Dataset):
-    def __init__(self, 
-                AnnData : AnnData, 
-                unique_token_dict : dict,
-                condition_key : str = 'condition',
-                max_multiplexing : int = 1,
-                use_batch_index : bool = False,
-                exp_batch_key : str = 'batch', 
-                pseudotime_key : str = "dpt_pseudotime",
-                neighbor_key : str = "",
-                n_neighbor : int = 90,
-                delimiter : str ="",
-                layers:str ='counts', 
-                split_key:str = 'split', 
-                which_set: str ='train',
-                max_degree: int = 5,
-                search_strategy: str = 'traverse',
-                check_samples = False
-                ):
-        self.super().__init__(AnnData, unique_token_dict, condition_key, max_multiplexing, 
-                            use_batch_index, exp_batch_key, pseudotime_key, neighbor_key, 
-                            n_neighbor, delimiter, layers, split_key, which_set, max_degree,
-                            search_strategy, check_samples)
-    
-    def traverse_next_degree_neighbor(self, knn_idx):
-        k = -1*self.k 
-        # random walk
-        next_degree_knn = []
-        for i_d in knn_idx:
-            neighbor = np.argpartition(self.connectivities[i_d], k)[k:].tolist()
-            next_degree_knn.extend(neighbor)
-        
-        # all neighbor visited to the current degree
-        knn_idx_d_plus1 = np.unique(next_degree_knn).astype(int)
-        
-        return knn_idx_d_plus1
-
-    def _diffuse_neighbor(self, i, c_i, t_i):
-        """
-        the Key function defines the noise sampling process 
-        given the starting point i
-        """
-        pass_1 = 0
-        pass_2 = 0
-        n_degree = 0
-        knn_idx = np.array([i])
-
-        for i in range(self.max_degree):
-            knn_idx = self.traverse_next_degree_neighbor(knn_idx)
-
-        # 1 : neighbor with the same condition
-        knn_c = self.multipx_conditions[knn_idx]
-        if c_i in knn_c:
-            pass_1_idx = knn_idx[knn_c == c_i]
-            pass_1 = 1
-        else:
-            pass_1_idx = knn_idx
-
-        # 2 : neighbor with bigger pseudo-time
-        knn_t = self.T[pass_1_idx]
-        if np.any(knn_t > t_i):
-            pass_2_idx = pass_1_idx[knn_t > t_i]
-            pass_2 = 1
-        else:
-            pass_2_idx = pass_1_idx
-            
-        # sampled by distance
-        knn_p = self.connectivities[i,pass_2_idx]
-        p = knn_p / knn_p.sum() if knn_p.sum() != 0 else None # normalized
-
-        neighbor_idx = np.random.choice(pass_2_idx, p=p)
-        return neighbor_idx, pass_1, pass_2
 
 class ODE_dataset(Diffuse_Dataset):
     def __init__(self, 
@@ -517,7 +906,7 @@ class ODE_dataset(Diffuse_Dataset):
                 exp_batch_key : str = 'batch', 
                 pseudotime_key : str = "dpt_pseudotime",
                 neighbor_key : str = "",
-                n_neighbor : int = 90,
+                n_neighbor : int = 15,
                 delimiter : str ="",
                 layers:str ='counts', 
                 split_key:str = 'split', 
