@@ -33,12 +33,17 @@ check_samples: false
 gene_dim: 4806
 time_emb_dim: 0
 n_base_perturbs: 3551
-condition_emb_dim: 128
+condition_emb_dim: 256
 activation: Mish
 hidden_size:
 - 512
-- 128
 - 512
+- 512
+- 256
+- 512
+- 512
+- 512
+kl_weight: 0.5
 
 # sampler args
 scheduler: linear_beta_schedule

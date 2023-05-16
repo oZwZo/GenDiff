@@ -38,9 +38,12 @@ activation: Mish
 hidden_size:
 - 512
 - 512
+- 512
 - 256
 - 512
 - 512
+- 512
+kl_weight: 1
 
 # sampler args
 scheduler: linear_beta_schedule

@@ -41,6 +41,7 @@ hidden_size:
 - 256
 - 512
 - 512
+kl_weight: 0.5
 
 # sampler args
 scheduler: linear_beta_schedule
