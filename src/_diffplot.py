@@ -240,52 +240,37 @@ def sample_Delta_X(yaml_path, sampling_repeat=100):
     # config
     model_config_path = os.path.join(PATH.main_dir, yaml_path)
     configs = _configure.Yaml_configurer(model_config_path)
-    
+    print('Sample data using dataset class %s'%configs.dataset_class)
+
     # dataloaders
+    print('preparing dataloaders ...')
     dl_ls = dl_from_config(configs, shuffle=False)
     adata_idx = np.concatenate([dl.dataset.adata.obs.index for dl in dl_ls], axis=0)
-
+    
+    print('loading adata ...')
     adata = sc.read(configs.anndata_path)
     origin_idx = adata.obs.index
     n = adata.shape[0]
 
-    data_iterators = [iter(dl) for dl in dl_ls]
-
+    print('Sampling ...')
     Delta_X_M = []
-    for r in tqdm(range(sampling_repeat)):
+    for r in tqdm(range(sampling_repeat)):  # repeats
         Delta_X_ls = []
-        for iterator in data_iterators:
-            for X, batch_idx, c, delta_x, t in tqdm(iterator):
+        data_iterators = [iter(dl) for dl in dl_ls]
+        for iterator in data_iterators:     # train val test
+            for X, batch_idx, c, delta_x, t in iterator:
                 Delta_X_ls.append(delta_x.cpu().numpy())
             Delta_X_ay = np.stack(Delta_X_ls)
         Delta_X_M.append(Delta_X_ay)
+
     Delta_X_M = np.stack(Delta_X_M).mean(axis=0)
 
     # save the representatio to adata
     adata_zc = adata[adata_idx].copy()
 
-    # prediction
-    adata_zc.obsm['delta_x'] = np.concatenate(Delta_X, axis=0)
-
-    # embedding
-    adata_zc.obsm['z_c'] = np.concatenate(zc_ls, axis=0)
-    adata_zc.obsm['z'] = np.concatenate(z_ls, axis=0)
-    adata_zc.obsm['c'] = np.concatenate(c_ls, axis=0)
-
-    # sc.pp.neighbors(adata_zc, n_neighbors = 35,  metric='cosine', method='umap', key_added='Z_c' ,use_rep='Z_c', )
-    if compute_neighbor:
-        print("\n"+"cell embedding extracted, ready to computing KNN...")
-        sc.pp.neighbors(adata_zc, n_neighbors = n_neighbors,  key_added=use_rep ,use_rep=use_rep, )
-    
-    if compute_umap:
-        print("\n"+"KNN constructed, computing UMAP...")
-        sc.tl.umap(adata_zc, min_dist = 0.5, maxiter=500, spread=1, random_state=0, neighbors_key=use_rep)
-
-    # sc.pl.umap(adata_zc, color=['discrete_time', 'assignment'])
-    if return_adata:
-        return adata_zc[origin_idx,:].copy(), pl_model
-    else:
-        return adata_zc[origin_idx,:].obsm['delta_x']
+    # return in the same order
+    adata_zc.obsm['delta_x'] = Delta_X_M
+    return adata_zc[origin_idx,:].obsm['delta_x']
 
 #   - device -
 def reload_sampler(yaml_file):
@@ -517,7 +502,7 @@ def triple_plot(annData:AnnData, color_key:str, dpi:int=100, **kwargs):
         sns.despine(ax=ax)
     return fig, axs
 
-def compute_velocity(adata, velocity_matrix,n_neighbors=30, **kwargs):
+def compute_velocity(adata, velocity_matrix,n_neighbors=None, **kwargs):
     adata1 = adata.copy()
     assert velocity_matrix.shape == adata1.X.shape
     adata1.layers['velocity'] = velocity_matrix
@@ -526,8 +511,7 @@ def compute_velocity(adata, velocity_matrix,n_neighbors=30, **kwargs):
     if n_neighbors is not None:
         del adata1.uns['neighbors']
         sc.pp.neighbors(adata1, n_neighbors=n_neighbors)
-    else:
-        n_neighbors = 30 
+    
     scvelo.tl.velocity_graph(adata1, xkey='X', n_neighbors=n_neighbors,**kwargs)
     return adata1
 
