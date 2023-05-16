@@ -5,6 +5,8 @@ if __name__ == '__main__':
     os.environ['CUDA VISIBLE DEVICES'] = args.CUDA
 
 import scanpy as sc
+import numpy as np
+
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning import callbacks 
@@ -15,38 +17,44 @@ from functools import partial
 from src import _sampler, _epsilon_module, _helper_net, _learner, _reader, _configure
 
 
-
-               
-
 #                   _                          
 ##                 | \  _. _|_  _.             ##
 ##                 |_/ (_|  |_ (_|             ##
 
-def dl_from_config(configs, shuffle=True):
+def dl_from_config(configs, shuffle=True, n_workers=4):
     adata = sc.read(configs.anndata_path)
-    # TODO: unique_token_dict fun from config
-    # adata.obs['pert1'] = adata.obs['condition'].apply(lambda x: x.split("+")[0])
-    # adata.obs['pert2'] = adata.obs['condition'].apply(lambda x: x.split("+")[-1])
-    # # unique tokens
-    # unique_token = list(set(adata.obs['pert1'].tolist() + adata.obs['pert2'].tolist()))
-    # unique_token.remove('ctrl')
-    # unique_token = ['ctrl'] + unique_token
-    # unique_token_dict = {token:i for i, token in enumerate(unique_token)}
+
 
     # - DataSet - 
+    configs.check_samples = False
     ds_fn = partial(eval(f"_reader.{configs.dataset_class}"), adata,  **configs.dataset_kwargs)
-    # AnDatasets = (ds_fn(which_set=s) for s in ['train','test','ood'])
+    
     AnDatasets = [ds_fn(which_set=s) for s in ['train','val','test']]
+
     # - DataLoader - 
     def my_collate(batch):
         "Puts each data field into a tensor with outer dimension batch size"
         if len(batch[0]) == 8:
             batch = list( filter (lambda x: x[5] - x[1] == configs.collect_time_span, batch))
+        # if np.any([not isinstance(x, torch.Tensor) for x in batch[0]]):
+        #     new_batch = []
+        #     for item in batch:
+        #         new_batch.append([torch.Tensor(x) for x in item if not isinstance(x, torch.Tensor)])
+        #     batch = new_batch
         return default_collate(batch)
-    dl_fn = partial(DataLoader, batch_size=configs.batch_size, 
+
+    train_loader = DataLoader(AnDatasets[0], batch_size = configs.batch_size, 
                                 collate_fn = my_collate,
-                                shuffle=shuffle, num_workers=4)
-    train_loader, val_loader, test_loader = (dl_fn(ds) for ds in AnDatasets)
+                                pin_memory = False,
+                                shuffle = shuffle, num_workers=n_workers)
+    val_loader = DataLoader(AnDatasets[1], batch_size = configs.batch_size, 
+                                collate_fn = my_collate,
+                                pin_memory = False,
+                                shuffle = False, num_workers=n_workers)
+    test_loader = DataLoader(AnDatasets[2], batch_size = configs.batch_size, 
+                                collate_fn = my_collate,
+                                pin_memory = False,
+                                shuffle = False, num_workers=n_workers)
     return train_loader, val_loader, test_loader
 
 
@@ -104,8 +112,9 @@ if __name__ == '__main__':
 
     config_dir = os.path.basename(os.path.dirname(args.model_config))
     configs = _configure.Yaml_configurer(args.model_config)
+    configs.check_samples = False
 
-    train_loader, val_loader, test_loader = dl_from_config(configs)
+    train_loader, val_loader, test_loader = dl_from_config(configs, n_workers=args.n_workers)
     eps_net = get_model_from_config(configs, args.CUDA)
     Sampler = get_sampler_from_configs(configs, eps_net)
 
@@ -114,15 +123,20 @@ if __name__ == '__main__':
     log_dir = os.path.join(path_n_util.pth_dir , config_dir, "{}_{}".format(configs.epsilon_class, run_name))
 
     trainer = pl.Trainer(
-            accelerator=accelerator, devices=1,
+            accelerator='gpu', devices=1,
             auto_lr_find=True,
+            # fast_dev_run = True,
+            # overfit_batches = args.overfit_batches,
             default_root_dir=log_dir,
-            max_epochs=configs.epochs, 
-            auto_select_gpus = True,
+            max_epochs=200, 
+            auto_select_gpus = False,
+            check_val_every_n_epoch=1,
             callbacks=[
                 callbacks.ModelCheckpoint(save_top_k=1, monitor="val_loss"),
-                callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=15)])        
+                callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=25)
+                ])        
 
     trainer.fit(Sampler, train_loader, val_loader)
+    
     trainer.validate(Sampler, test_loader)
     trainer.test(Sampler, test_loader)

@@ -22,4 +22,6 @@ def main_train_parser():
     parser = argparse.ArgumentParser("script for training differentiaion diffusion")
     parser.add_argument("--CUDA", type=str, default='cpu', help="nominate the GPU to use if there are multiple devices")
     parser.add_argument("--model_config", type=str, required=True, help='the abs path of config json file which has all hyper the parameters')
+    parser.add_argument("--overfit_batches", type=int, default=0, help='Debugging Flag. See if the model can overfit on train set')
+    parser.add_argument("--n_workers", type=int, default=10, help='The nubmer of workers for dataloader')
     return parser
