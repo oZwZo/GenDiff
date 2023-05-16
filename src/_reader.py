@@ -90,7 +90,7 @@ class AnnDataSet(Dataset):
     
     def _to_dense(self, x):
         if self.detect_sparse_matrix(x):
-            return np.asarray(x.todense())
+            return np.asarray(x.A)
         else:
             return x
     
@@ -216,7 +216,7 @@ class Traverse_Dataset(Condition_AnnDataSet):
                 exp_batch_key : str = 'batch', 
                 pseudotime_key : str = "dpt_pseudotime",
                 neighbor_key : str = "",
-                n_neighbor : int = 90,
+                n_neighbor : int = 15,
                 delimiter : str ="",
                 layers:str ='counts', 
                 split_key:str = 'split', 
@@ -239,12 +239,16 @@ class Traverse_Dataset(Condition_AnnDataSet):
         #    
         self.free_search_degree = 3
 
+        self.raw_X = self.adata_raw.X
+        self.raw_i = self.adata_raw.obs_names
+        self.raw_C = self.adata_raw.obs[condition_key].values
+        self.raw_T = self.adata_raw.obs['discrete_time'].values
 
-        self.connectivities = self.adata.obsp[neighbor_key+'connectivities']
+        self.connectivities = self.adata_raw.obsp[neighbor_key+'connectivities']
         self.connectivities = self._to_dense(self.connectivities)
 
-        self.distance = self.adata.obsp[neighbor_key+'distances']
-        # self.distance = self._to_dense(self.distance)
+        self.distance = self.adata_raw.obsp[neighbor_key+'distances']
+        self.distance = self._to_dense(self.distance)
 
 
     @property
@@ -276,6 +280,13 @@ class Traverse_Dataset(Condition_AnnDataSet):
         knn_idx_d_plus1 = np.unique(knn_idx_d_plus1).astype(int)
         
         return knn_idx_d_plus1
+
+    def index_subset_2_raw(self,i):
+        cb_i = self.adata.obs_names[i]
+        return np.where(self.raw_i == cb_i)[0]
+    
+    def subset_2_raw_index_ls(self,indexs):
+        return [self.index_subset_2_raw(i) for i in indexs]
     
     def expand_neighbor(self, i, n_degree):
         k = -1*self.k * (1+n_degree)
@@ -292,16 +303,19 @@ class Traverse_Dataset(Condition_AnnDataSet):
         n_degree = 0
         knn_idx = np.array([i])
         pass_2_idx = np.array([i])
-        while pass_1*pass_2==0 and n_degree < self.max_degree:
-            
 
-            if n_degree > self.free_search_degree:   # only under this degree can we expand knn without any constraints
-                knn_idx = pass_2_idx
+        # dist_array = dijkstra(self.adata_raw.obsp['KNN_distances'], indices = self.index_subset_2_raw(i),, unweighted = True)[0]
+        # dijkstra_knn = np.where(dist_array <= self.max_degree)[0]
+        # dijkstra_c = np.array(self.raw_C[dijkstra_knn] == c_i).astype(int)
+        # dijkstra_t = np.array(self.raw_T[dijkstra_knn] > t_i).astype(int)
+        # print(dijkstra_c.sum(), dijkstra_t.sum(), np.multiply(dijkstra_c,dijkstra_t).sum())
+
+        while pass_1*pass_2==0 and n_degree < self.max_degree:
 
             knn_idx = self.traverse_neighbor(knn_idx) if self.search_strategy == 'traverse' else self.expand_neighbor(i, n_degree)
 
             # 1 : neighbor with the same condition
-            knn_c = self.multipx_conditions[knn_idx]
+            knn_c = self.raw_C[knn_idx]
             if c_i in knn_c:
                 pass_1_idx = knn_idx[knn_c == c_i]
                 pass_1 = 1
@@ -309,7 +323,7 @@ class Traverse_Dataset(Condition_AnnDataSet):
                 pass_1_idx = knn_idx
 
             # 2 : neighbor with bigger pseudo-time
-            knn_t = self.T[pass_1_idx]
+            knn_t = self.raw_T[pass_1_idx]
             if np.any(knn_t > t_i):
                 pass_2_idx = pass_1_idx[knn_t > t_i]
                 pass_2 = 1
@@ -350,8 +364,9 @@ class Traverse_Dataset(Condition_AnnDataSet):
             batch_idx=[]
 
         t = self.T[i]
+        # the sampled neighbor_idx belongs to raw idx
         neighbor_idx, pass1, pass2  = self._diffuse_neighbor(i, c_string, t)
-        noise = self.X[neighbor_idx] - exp_mat
+        noise = self.raw_X[neighbor_idx] - exp_mat
 
         # expression matrix X , expreimental batch , perturbation [c1, c2, c3..], noise -> delta X, t: discreted t
         if self.check_samples:
@@ -434,11 +449,16 @@ class Diffuse_Dataset(Condition_AnnDataSet):
         knn_idx_d_plus1 = np.unique(next_degree_knn).astype(int).tolist()
         return knn_idx_d_plus1
     
-    def _sample_by_distance(self, dist_array, candidate_idx):
+    def _sample_by_distance(self, dist_array, candidate_idx, alpha=None):
         """
         based on the knn distance, sample the closest cell 
-            P ~ 
+            P ~ (1 - distance)
+        dist_array : ndarray, distance from all other cells to cell i
+        candidate_idx : the index of knn / or cansidered neighbor cells
+        alpha: parameter to adjust uncertainty, the lower the more uncertrain
         """
+        alpha = 1 if alpha is None else alpha
+
         dist = dist_array[candidate_idx]
         where_inf = np.isinf(dist)
         if np.any(where_inf):
@@ -450,11 +470,12 @@ class Diffuse_Dataset(Condition_AnnDataSet):
 
         knn_p = dist.max() - dist + 0.1*dist.min()
         if knn_p.sum() > 0:
+            knn_p = knn_p**alpha
             p = knn_p / knn_p.sum() # normalized
         else:
             p = None 
         neighbor_idx = np.random.choice(candidate_idx, p=p)
-        return neighbor_idx
+        return neighbor_idx, p
     
     def expand_neighbor(self, i, n_degree):
         k = -1*self.k * (1+n_degree)
@@ -506,7 +527,7 @@ class Diffuse_Dataset(Condition_AnnDataSet):
             final_index = knn_idx
             neighbor_idx = i
         else:
-            neighbor_idx = self._sample_by_distance(self.distance, final_index)
+            neighbor_idx, p = self._sample_by_distance(self.distance, final_index)
         return neighbor_idx, (pass_1,pass_1_idx), (pass_2,pass_2_idx)
 
     def _diffuse_neighbor(self, i, c_i, t_i):
@@ -555,7 +576,7 @@ class Diffuse_Dataset(Condition_AnnDataSet):
             final_index = knn_idx
             neighbor_idx = i
         else:
-            neighbor_idx = self._sample_by_distance(self.distance[i].A.flatten(), final_index)
+            neighbor_idx, p = self._sample_by_distance(self.distance[i].A.flatten(), final_index)
         return neighbor_idx, (pass_1,pass_1_idx), (pass_2,pass_2_idx)
 
 
@@ -598,6 +619,7 @@ class Path_Diffuse(Diffuse_Dataset):
     def __init__(self, 
                 AnnData : AnnData, 
                 unique_token_dict : dict,
+                alpha : float = None,
                 condition_key : str = 'condition',
                 max_multiplexing : int = 1,
                 use_batch_index : bool = False,
@@ -620,7 +642,26 @@ class Path_Diffuse(Diffuse_Dataset):
                             delimiter = delimiter, layers=layers, split_key=split_key, which_set=which_set,
                             max_degree=max_degree, search_strategy=search_strategy, check_samples=check_samples
                             )
+                        
+        self.alpha = alpha
+
+        self.raw_X = self.adata_raw.X
+        self.raw_i = self.adata_raw.obs_names
+        self.raw_C = self.adata_raw.obs[condition_key].values
+        self.raw_T = self.adata_raw.obs['discrete_time'].values
+
+        self.connectivities = self.adata_raw.obsp[neighbor_key+'connectivities']
+        self.connectivities = self._to_dense(self.connectivities)
+
+        self.distance = self.adata_raw.obsp[neighbor_key+'distances']
+        self.distance = self._to_dense(self.distance)
     
+    def index_subset_2_raw(self,i):
+        cb_i = self.adata.obs_names[i]
+        return np.where(self.raw_i == cb_i)[0]
+    
+    def subset_2_raw_index_ls(self,indexs):
+        return [self.index_subset_2_raw(i) for i in indexs]
 
     def _neighbor_path(self, i, c_i, t_i):
         """
@@ -634,6 +675,7 @@ class Path_Diffuse(Diffuse_Dataset):
             - Sample with condition and time
         """
         # free travese steps
+        raw_i = self.index_subset_2_raw(i)
         knn_dict = {'0':[i]}
         Around_root = False
         for d in range(self.max_degree):
@@ -650,14 +692,17 @@ class Path_Diffuse(Diffuse_Dataset):
 
         else:
             # find path
-            same_class_idx = np.where(self.multipx_conditions == c_i)[0]
-            gtr_t_idx = np.where(self.T > t_i)[0]
+            same_class_idx = np.where(self.raw_C == c_i)[0]
+            gtr_t_idx = np.where(self.raw_T > t_i)[0]
             meet_both = np.intersect1d(same_class_idx, gtr_t_idx)
 
-            dist_array = dijkstra(self.distance, indices=i,
-                                    limit=1000, return_predecessors=False)
-            depth_from_i = dijkstra(self.distance, indices=i, unweighted=True,
-                                    limit=1000, return_predecessors=False)
+            dist_array = dijkstra(self.distance, indices=raw_i,
+                                    limit=1000, return_predecessors=False)[0]
+            dist_array = dist_array.flatten()
+            depth_from_i = dijkstra(self.distance, indices=raw_i, 
+                    unweighted=True, limit=1000, return_predecessors=False)[0]
+            depth_from_i = depth_from_i.flatten()
+            assert len(depth_from_i.shape) == 1
 
             if len(meet_both) == 0:
                 
@@ -668,13 +713,13 @@ class Path_Diffuse(Diffuse_Dataset):
 
                 elif len(gtr_t_idx) > 0:
                     # use future cells
-                    neighbor_idx = self._sample_by_distance(dist_array, gtr_t_idx)
+                    neighbor_idx, p = self._sample_by_distance(dist_array, gtr_t_idx, self.alpha)
                     step = depth_from_i[neighbor_idx]
                     note = 'Sample forward by time'
 
                 else:
                     # i is the one with biggest time
-                    neighbor_idx = self._sample_by_distance(dist_array, same_class_idx)
+                    neighbor_idx, p = self._sample_by_distance(dist_array, same_class_idx, self.alpha)
                     note = 'Sample backward by condition'
                     step = depth_from_i[neighbor_idx]
                 
@@ -686,7 +731,7 @@ class Path_Diffuse(Diffuse_Dataset):
                 
             else:
                 # the idea situation
-                neighbor_idx = self._sample_by_distance(dist_array, meet_both)
+                neighbor_idx,p = self._sample_by_distance(dist_array, meet_both, self.alpha)
 
                 step = depth_from_i[neighbor_idx]
                 note = 'Sample with condition and time'
@@ -711,13 +756,14 @@ class Path_Diffuse(Diffuse_Dataset):
             t = 0
             
         elif 'Orphan condition' in note:
-            X = self.adata_raw.X[neighbor_idx]
+            X = self.raw_X[neighbor_idx]
             delta_X = (self.X[i] - X) 
             delta_X /= step
 
         elif note in ['Sample forward by time', 'Single future state', 'Sample with condition and time']:
             X = self.X[i]
-            delta_X = (X - self.X[neighbor_idx]) 
+            X_next = self.raw_X[neighbor_idx]
+            delta_X = (X - X_next) 
         
         else:
             raise ValueError("Undefined scenario")
@@ -820,7 +866,9 @@ class Root_Diffuse(Diffuse_Dataset):
 
         # select by T
         degree = self.Degree[i]
-        Delta_X = (self.X[i] - self.root_x) #/ degree
+        if degree == 0:
+            degree = 1
+        Delta_X = (self.X[i] - self.root_x) / degree
 
         # expression matrix X , expreimental batch , perturbation [c1, c2, c3..], noise -> delta X, t: discreted t
         return X, batch_idx, condition_idx, Delta_X, degree
