@@ -514,6 +514,68 @@ class Epsilon_CVAE(Epsilon_CAE):
         )
         kl_loss = db.kl.kl_divergence(basal_distribution, dist_pz).sum(-1)
         return recon_loss + self.kl_weight * kl_loss.mean()
+
+class Epsilon_VAE(Epsilon_CVAE):
+    def __init__(self, 
+                gene_dim: int, 
+                kl_weight : float = 1.0,
+                time_emb_dim : int = 0,
+                n_base_perturbs : int = 1,
+                condition_emb_dim : int = 32,
+                use_batch_index : bool = False,
+                hidden_size: list = [256,128,256],
+                activation : Union[str, nn.Module] = "Mish",
+                pretrained_embeddings : nn.Module = None,
+                ) :
+        super().__init__(gene_dim, kl_weight, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, hidden_size, activation, pretrained_embeddings)
+        
+        self.encoder_dims = self.encoder_dims[:-1]
+        self.decoder_dims[-1] = self.decoder_dims[-1] 
+        self.variational = True
+        self.kl_weight = kl_weight
+        
+
+        self.i = 0
+        encoder = self.define_block(self.encoder_dims)
+        decoder = self.define_block(self.decoder_dims)
+        # lag_predictor = self.define_block(self.decoder_dims)
+        fc_mu = nn.Sequential(
+            nn.BatchNorm1d(self.encoder_dims[-1]),
+            self.act_fn(),
+            nn.Linear(self.encoder_dims[-1], condition_emb_dim)
+        )
+        fc_var = nn.Sequential(
+            nn.BatchNorm1d(self.encoder_dims[-1]),
+            self.act_fn(),
+            nn.Linear(self.encoder_dims[-1], condition_emb_dim)
+        )
+
+        self.var = nn.parameter.Parameter(torch.ones((self.gene_dim,1)), requires_grad=True)
+        
+        self.epsilon_theta = nn.ModuleDict(
+            {'encoder': nn.Sequential(OrderedDict(encoder)), 
+            'fc_mu' : fc_mu,
+            'fc_var' : fc_var,
+            'decoder': nn.Sequential(OrderedDict(decoder)),
+            })
+
+    def encode(self,x_0, c, batch = None, t_0 = None):
+        # input
+        input_dict= self._get_model_input(x_0, c, batch,  t_0)
+        x_ = input_dict['full_input']
+        c_emb = input_dict['condition']
+        c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
+        
+        # encode
+        n_latent = self.encoder_dims[-1] // 2
+        hidden = self.epsilon_theta['encoder'](x_)
+
+        z_mean = self.epsilon_theta['fc_mu'](hidden)
+        z_vars = self.var_act(self.epsilon_theta['fc_var'](hidden))
+        
+        z = self.reparameterize(z_mean, z_vars) # latent
+
+        return {"z":z, "z_c":z, "c":c_emb, 'q_m':z_mean, 'q_v':z_vars}
     
 class Epsilon_CVAE_adv(Epsilon_CVAE):
     def __init__(self, 
