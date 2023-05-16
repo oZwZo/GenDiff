@@ -26,11 +26,15 @@ class Yaml_configurer(object):
             "exp_batch_key", "delimiter", "layers", "split_key",
         ]
         diffuse_attr = ["unique_token_dict", "pseudotime_key", "n_neighbor", "max_degree", "search_strategy" ,"check_samples"]
-        if self.dataset_class in ["Diffuse_Dataset", "Traverse_Dataset", "Path_Diffuse","ODE_dataset", "Fix_Degree_Diffuse"]:
+        if self.dataset_class in ["Diffuse_Dataset", "Traverse_Dataset", "ODE_dataset", "Fix_Degree_Diffuse"]:
             attr_list += diffuse_attr
         elif self.dataset_class in ["Root_Diffuse"]:
             attr_list += diffuse_attr
             attr_list += ["root_cell"]
+        elif self.dataset_class in ["Path_Diffuse"]:
+            attr_list += diffuse_attr
+            attr_list += ["alpha"]
+            
         return  {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}
 
     @property
