@@ -449,13 +449,14 @@ class Diffuse_Dataset(Condition_AnnDataSet):
         knn_idx_d_plus1 = np.unique(next_degree_knn).astype(int).tolist()
         return knn_idx_d_plus1
     
-    def _sample_by_distance(self, dist_array, candidate_idx, alpha=None):
+    def _sample_by_distance(self, dist_array, candidate_idx, alpha=None, repeat=1):
         """
         based on the knn distance, sample the closest cell 
             P ~ (1 - distance)
         dist_array : ndarray, distance from all other cells to cell i
         candidate_idx : the index of knn / or cansidered neighbor cells
         alpha: parameter to adjust uncertainty, the lower the more uncertrain
+        repeat: the number of cells to sample each time
         """
         alpha = 1 if alpha is None else alpha
 
@@ -474,7 +475,10 @@ class Diffuse_Dataset(Condition_AnnDataSet):
             p = knn_p / knn_p.sum() # normalized
         else:
             p = None 
-        neighbor_idx = np.random.choice(candidate_idx, p=p)
+
+        neighbor_idx = [np.random.choice(candidate_idx, p=p) for i in range(repeat)]
+        if repeat == 1:
+            neighbor_idx = neighbor_idx[0]
         return neighbor_idx, p
     
     def expand_neighbor(self, i, n_degree):
@@ -619,6 +623,7 @@ class Path_Diffuse(Diffuse_Dataset):
     def __init__(self, 
                 AnnData : AnnData, 
                 unique_token_dict : dict,
+                repeat: float = 1,
                 alpha : float = None,
                 condition_key : str = 'condition',
                 max_multiplexing : int = 1,
@@ -644,6 +649,7 @@ class Path_Diffuse(Diffuse_Dataset):
                             )
                         
         self.alpha = alpha
+        self.repeat = repeat
 
         self.raw_X = self.adata_raw.X
         self.raw_i = self.adata_raw.obs_names
@@ -654,7 +660,7 @@ class Path_Diffuse(Diffuse_Dataset):
         self.connectivities = self._to_dense(self.connectivities)
 
         self.distance = self.adata_raw.obsp[neighbor_key+'distances']
-        self.distance = self._to_dense(self.distance)
+        # self.distance = self._to_dense(self.distance)
     
     def index_subset_2_raw(self,i):
         cb_i = self.adata.obs_names[i]
@@ -697,12 +703,13 @@ class Path_Diffuse(Diffuse_Dataset):
             meet_both = np.intersect1d(same_class_idx, gtr_t_idx)
 
             dist_array = dijkstra(self.distance, indices=raw_i,
-                                    limit=1000, return_predecessors=False)[0]
+                                    limit=1000, return_predecessors=False)
             dist_array = dist_array.flatten()
+
             depth_from_i = dijkstra(self.distance, indices=raw_i, 
-                    unweighted=True, limit=1000, return_predecessors=False)[0]
+                    unweighted=True, limit=1000, return_predecessors=False)
             depth_from_i = depth_from_i.flatten()
-            assert len(depth_from_i.shape) == 1
+            assert len(depth_from_i.shape) == 1, "Shape Error dist/depth array is not 1d"
 
             if len(meet_both) == 0:
                 
@@ -713,13 +720,13 @@ class Path_Diffuse(Diffuse_Dataset):
 
                 elif len(gtr_t_idx) > 0:
                     # use future cells
-                    neighbor_idx, p = self._sample_by_distance(dist_array, gtr_t_idx, self.alpha)
+                    neighbor_idx, p = self._sample_by_distance(dist_array, gtr_t_idx, self.alpha, self.repeat)
                     step = depth_from_i[neighbor_idx]
                     note = 'Sample forward by time'
 
                 else:
                     # i is the one with biggest time
-                    neighbor_idx, p = self._sample_by_distance(dist_array, same_class_idx, self.alpha)
+                    neighbor_idx, p = self._sample_by_distance(dist_array, same_class_idx, self.alpha, self.repeat)
                     note = 'Sample backward by condition'
                     step = depth_from_i[neighbor_idx]
                 
@@ -731,7 +738,7 @@ class Path_Diffuse(Diffuse_Dataset):
                 
             else:
                 # the idea situation
-                neighbor_idx,p = self._sample_by_distance(dist_array, meet_both, self.alpha)
+                neighbor_idx,p = self._sample_by_distance(dist_array, meet_both, self.alpha, self.repeat)
 
                 step = depth_from_i[neighbor_idx]
                 note = 'Sample with condition and time'
@@ -757,12 +764,16 @@ class Path_Diffuse(Diffuse_Dataset):
             
         elif 'Orphan condition' in note:
             X = self.raw_X[neighbor_idx]
+            if len(neighbor_idx) > 0:
+                X = X.mean(axis=0)
             delta_X = (self.X[i] - X) 
             delta_X /= step
 
         elif note in ['Sample forward by time', 'Single future state', 'Sample with condition and time']:
             X = self.X[i]
             X_next = self.raw_X[neighbor_idx]
+            if len(neighbor_idx) > 0:
+                X_next = X.mean(axis=0)
             delta_X = (X - X_next) 
         
         else:
@@ -868,7 +879,7 @@ class Root_Diffuse(Diffuse_Dataset):
         degree = self.Degree[i]
         if degree == 0:
             degree = 1
-        Delta_X = (self.X[i] - self.root_x) / degree
+        Delta_X = (self.X[i] - self.root_x) #/ degree
 
         # expression matrix X , expreimental batch , perturbation [c1, c2, c3..], noise -> delta X, t: discreted t
         return X, batch_idx, condition_idx, Delta_X, degree

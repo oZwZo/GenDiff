@@ -33,7 +33,7 @@ class Yaml_configurer(object):
             attr_list += ["root_cell"]
         elif self.dataset_class in ["Path_Diffuse"]:
             attr_list += diffuse_attr
-            attr_list += ["alpha"]
+            attr_list += ["alpha", "repeat"]
             
         return  {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}
 

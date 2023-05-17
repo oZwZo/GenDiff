@@ -62,7 +62,7 @@ class my_VAE(BaseModuleClass):
         qz_mean = self.mean_encoder(x_)
         qz_var = self.var_encoder(x_)
         # reparameterize
-        prior = Normal(loc=qz_mean, scale=torch.sqrt(qz_mean))
+        prior = Normal(loc=qz_mean, scale=torch.sqrt(qz_var))
         z_n = prior.rsample()
         
         # do the same thing for size factor

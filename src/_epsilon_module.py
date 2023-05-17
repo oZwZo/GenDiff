@@ -389,7 +389,7 @@ class Epsilon_CAE(Epsilon_Linear):
 
     def encode(self, x_0, c, batch, t_0):
         # input
-        input_dict= self._get_model_input(x_0, t_0, batch, c)
+        input_dict= self._get_model_input(x_0, c, batch, t_0)
         x_ = input_dict['full_input']
         c_emb = input_dict['condition']
         c_emb = c_emb.sum(dim=1) if len(c_emb.shape) == 3 else c_emb
@@ -417,7 +417,62 @@ class Epsilon_CAE(Epsilon_Linear):
     def compute_loss(self, DeltaX, DeltaX_pred):
         return self.loss_fn(DeltaX, DeltaX_pred)
 
+class GuassianNLL_CAE(Epsilon_Linear):
+    def __init__(self, 
+                gene_dim: int, 
+                time_emb_dim : int,
+                n_base_perturbs : int,
+                condition_emb_dim : int,
+                use_batch_index : bool,
+                hidden_size: list = [256,128,256],
+                activation : Union[str, nn.Module] = "Mish",
+                pretrained_embeddings : nn.Module = None,
+                ) :
+        super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, hidden_size, activation, pretrained_embeddings)
+        self.variational = True
+        self.decoder_dims = self.decoder_dims[:-1]
 
+        self.i = 0
+        encoder = self.define_block(self.encoder_dims)
+        decoder = self.define_block(self.decoder_dims)
+        
+        gene_mu = nn.Sequential(
+            nn.BatchNorm1d(self.encoder_dims[-1]),
+            self.act_fn(),
+            nn.Linear(self.decoder_dims[-1], gene_dim)
+        )
+        gene_var = nn.Sequential(
+            nn.BatchNorm1d(self.encoder_dims[-1]),
+            self.act_fn(),
+            nn.Linear(self.decoder_dims[-1], gene_dim),
+            nn.Softplus()
+        )
+
+        self.epsilon_theta = nn.ModuleDict(
+            {'encoder': nn.Sequential(OrderedDict(encoder)), 
+            'decoder': nn.Sequential(OrderedDict(decoder)),
+            'gene_mu': gene_mu,
+            "gene_var": gene_var
+            })
+
+        self.loss_fn = nn.GaussianNLLLoss()
+        # time embeddings
+
+    def forward(self, x_0, c, batch = None, t_0 = None):
+        
+        z_dict = self.encode(x_0, c, batch, t_0)
+        z_c_act = z_dict['z_c']
+        hidden = self.epsilon_theta['decoder'](z_c_act)
+
+        gene_mean = self.epsilon_theta['gene_mu'](hidden)
+        gene_var = self.epsilon_theta['gene_var'](hidden)
+
+        return gene_mean, gene_var
+
+    def compute_loss(self, DeltaX, mu_var):
+        mean, var = mu_var
+        return self.loss_fn(mean, DeltaX, var)
+    
 class Epsilon_CVAE(Epsilon_CAE):
     def __init__(self, 
                 gene_dim: int, 
