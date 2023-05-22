@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     # 
     device = args.device if torch.cuda.is_available() else 'cpu'
-    pertrub_condition_ls = eval(perturb_conditions)
+    pertrub_condition_ls = eval(args.perturb_conditions)
 
     # 
     config_path = os.path.join(path_n_util.main_dir, args.model_config)
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     adata = sc.read_h5ad(model_config.anndata_path)
 
     # save dir
-    higher_dir = os.path.join(path_n_util.main_dir, f"result/{design_dir}")
+    higher_dir = os.path.join(path_n_util.main_dir, f"result/TFAtlas/{design_dir}")
     if not os.path.exists(higher_dir):
         os.makedirs(higher_dir)
 
