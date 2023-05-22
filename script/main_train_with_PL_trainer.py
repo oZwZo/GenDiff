@@ -133,7 +133,7 @@ if __name__ == '__main__':
             check_val_every_n_epoch=1,
             callbacks=[
                 callbacks.ModelCheckpoint(save_top_k=1, monitor="val_loss"),
-                callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=25)
+                callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=50)
                 ])        
 
     trainer.fit(Sampler, train_loader, val_loader)
