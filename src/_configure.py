@@ -25,7 +25,7 @@ class Yaml_configurer(object):
             "unique_token_dict", "condition_key", "max_multiplexing", "use_batch_index",
             "exp_batch_key", "delimiter", "layers", "split_key",
         ]
-        diffuse_attr = ["unique_token_dict", "pseudotime_key", "n_neighbor", "max_degree", "search_strategy" ,"check_samples"]
+        diffuse_attr = ["pseudotime_key", "n_neighbor", "max_degree", "search_strategy" ,"check_samples"]
         if self.dataset_class in ["Diffuse_Dataset", "Traverse_Dataset", "ODE_dataset", "Fix_Degree_Diffuse"]:
             attr_list += diffuse_attr
         elif self.dataset_class in ["Root_Diffuse"]:
@@ -34,6 +34,10 @@ class Yaml_configurer(object):
         elif self.dataset_class in ["Path_Diffuse"]:
             attr_list += diffuse_attr
             attr_list += ["alpha", "repeat"]
+        elif self.dataset_class in ["Supervised_AnnDataSet","Dummy_condition_AnnDataSet"]:
+            # attr_list += diffuse_attr
+            attr_list += ["label_key", "input_rep", "unique_token_dict", "pseudotime_key"]
+            
             
         return  {a:self.__getattribute__(a) for a in attr_list if self.__getattribute__(a) is not None}
 
@@ -51,6 +55,8 @@ class Yaml_configurer(object):
             attr_list += ['hidden_size', 'qk_dimension', 'n_heads']
         elif self.epsilon_class in ["Epsilon_CAE", "Epsilon_CVAE"]:
             attr_list += ['hidden_size']
+        elif self.epsilon_class in ['Epsilon_Categorical']:
+            attr_list += ['hidden_size']
         else:
             raise ValueError("non seen `Epsilon` Module")
         
@@ -66,10 +72,14 @@ class Yaml_configurer(object):
             if (attr in self.config_dict.keys()):
                 if self.config_dict[attr] is not None:
                     attr_list.append(attr)
-        
+
+        if self.sampler_class in ['Weight_l2_sampler']:
+            attr_list += ['l2_weight','weight_decay']
+
+
         if self.sampler_class in ['ODE_learner']:
             attr_list = ['loss_type']
-
+        
         elif self.sampler_class in ['AE_learner']:
             attr_list = ['lr']
 

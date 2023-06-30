@@ -89,8 +89,8 @@ def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10,de
     # models
     # eps_net = get_model_from_config(configs, device)
     # Sampler_pl_module = eval("_learner."+configs.sampler_class)
-    # v0_equi_diff = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to(device)
-    pl_model = reload_sampler(model_config_path).to(device)
+    # pl_model = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to(device)
+    pl_model = reload_sampler(model_config_path,ckpt_path , device)
     pl_model.eval();
 
     data_iterators = [iter(dl) for dl in dl_ls]
@@ -101,8 +101,8 @@ def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10,de
     Delta_X = []
 
     with torch.no_grad():
-        for iterator in data_iterators:
-            for X, batch_idx, c, noise, t in tqdm(iterator):
+        for dl in dl_ls:
+            for X, batch_idx, c, noise, t in tqdm(dl):
                 if device != 'cpu':
                     c = c.to(device)
                     X = X.to(device)
@@ -174,11 +174,11 @@ def perturbation(yaml_path, ckpt_path, perturbation , n_neighbors = 10,device=3 
             )
 
     # models
-    # eps_net = get_model_from_config(configs, device)
-    # Sampler_pl_module = eval("_learner."+configs.sampler_class)
-    # pl_model = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net)
+    eps_net = get_model_from_config(configs, device)
+    Sampler_pl_module = eval("_learner."+configs.sampler_class)
+    pl_model = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net)
 
-    pl_model = reload_sampler(model_config_path).to(device)
+    # pl_model = reload_sampler(model_config_path).to(device)
     pl_model.eval();
 
 
@@ -292,38 +292,59 @@ def sample_Delta_X(yaml_path, sampling_repeat=100, n_workers=10, return_repeat=F
         return adata_zc[origin_idx,:].obsm['delta_x']
 
 #   - device -
-def reload_sampler(yaml_file):
-    # define configure
+def reload_sampler(yaml_file, ckpt_path, device):
+
     configs = _configure.Yaml_configurer(yaml_file)
+
     module_kw = configs.epsilon_kwargs
     Module_Class = eval("_epsilon_module.%s" %configs.epsilon_class)
+    eps_net = Module_Class(**module_kw).to('cpu')
 
-    # - pretrain - 
-    if configs.pretrain_embedder_pth is not None:
-        pretrain_embedder = torch.load(configs.pretrain_embedder_pth)
-        if configs.fix_pretrain:    
-        # fix embeddings at the beginning
-            for p in pretrain_embedder.parameters():
-                p.required_grads = False
-        module_kw['pretrained_embeddings'] = pretrain_embedder
-
-    # - define module -
+    v0_ckpt = get_ckpt_path(
+        ckpt_path
+            )
     
-    # detect saved eps net
-    save_path = os.path.join(PATH.pth_dir , configs.epsilon_class, 
-                    os.path.basename(yaml_file).replace(".yaml",".pth"))
-    if os.path.exists(save_path):
-        eps_net = torch.load(save_path, map_location='cpu')
-        print(f"epsilon net is loaded from \n{save_path}")
-    else:
-        eps_net = Module_Class(**module_kw).to('cpu')
-    
-    Samper_Class = eval("_learner.%s" %configs.sampler_class)
-    sampler_kwargs = configs.sampler_kwargs
-    sampler_kwargs['model'] = eps_net
+    if os.path.exists(v0_ckpt):
+        print('checkpoint finded')
 
-    Sampler = Samper_Class(**sampler_kwargs)
-    return Sampler
+    # models
+    Sampler_pl_module = eval("_learner."+configs.sampler_class)
+    pl_model = Sampler_pl_module.load_from_checkpoint(v0_ckpt, model=eps_net).to(device)
+    pl_model.eval();
+
+    print(f"{configs.sampler_class} loaded with module {configs.epsilon_class}")
+
+    # # define configure
+    # configs = _configure.Yaml_configurer(yaml_file)
+    # module_kw = configs.epsilon_kwargs
+    # Module_Class = eval("_epsilon_module.%s" %configs.epsilon_class)
+
+    # # - pretrain - 
+    # if configs.pretrain_embedder_pth is not None:
+    #     pretrain_embedder = torch.load(configs.pretrain_embedder_pth)
+    #     if configs.fix_pretrain:    
+    #     # fix embeddings at the beginning
+    #         for p in pretrain_embedder.parameters():
+    #             p.required_grads = False
+    #     module_kw['pretrained_embeddings'] = pretrain_embedder
+
+    # # - define module -
+    
+    # # detect saved eps net
+    # save_path = os.path.join(PATH.pth_dir , configs.epsilon_class, 
+    #                 os.path.basename(yaml_file).replace(".yaml",".pth"))
+    # if os.path.exists(save_path):
+    #     eps_net = torch.load(save_path, map_location='cpu')
+    #     print(f"epsilon net is loaded from \n{save_path}")
+    # else:
+    #     eps_net = Module_Class(**module_kw).to('cpu')
+    
+    # Samper_Class = eval("_learner.%s" %configs.sampler_class)
+    # sampler_kwargs = configs.sampler_kwargs
+    # sampler_kwargs['model'] = eps_net
+
+    # Sampler = Samper_Class(**sampler_kwargs)
+    return pl_model
 
 def condition_on_umap(adata, c1, basis='umap', 
                                 subplot_kw={"dpi":100, "figsize":(5,4)},):
