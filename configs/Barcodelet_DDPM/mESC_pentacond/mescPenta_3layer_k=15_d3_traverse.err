@@ -1,0 +1,20 @@
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+
+  | Name    | Type           | Params
+-------------------------------------------
+0 | model   | Epsilon_Linear | 572 K 
+1 | loss_fn | SmoothL1Loss   | 0     
+-------------------------------------------
+572 K     Trainable params
+0         Non-trainable params
+572 K     Total params
+2.292     Total estimated model params size (MB)
+/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:492: PossibleUserWarning: Your `val_dataloader`'s sampler has shuffling enabled, it is strongly recommended that you turn shuffling off for val/test/predict dataloaders.
+  category=PossibleUserWarning,
+/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py:653: UserWarning: Detected KeyboardInterrupt, attempting graceful shutdown...
+  rank_zero_warn("Detected KeyboardInterrupt, attempting graceful shutdown...")
+/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:492: PossibleUserWarning: Your `test_dataloader`'s sampler has shuffling enabled, it is strongly recommended that you turn shuffling off for val/test/predict dataloaders.
+  category=PossibleUserWarning,

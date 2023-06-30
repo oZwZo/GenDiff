@@ -1,0 +1,23 @@
+nohup: ignoring input and appending output to 'nohup.out'
+GPU available: True, used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Missing logger folder: /data/users/wergillius/diffuse_differentiate/Equivalent_Diffuse_Sampler/Epsilon_Linear_mesendo_7layer_k=15/lightning_logs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+
+  | Name    | Type           | Params
+-------------------------------------------
+0 | model   | Epsilon_Linear | 5.8 M 
+1 | loss_fn | SmoothL1Loss   | 0     
+-------------------------------------------
+5.8 M     Trainable params
+0         Non-trainable params
+5.8 M     Total params
+23.089    Total estimated model params size (MB)
+/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:498: PossibleUserWarning: Your `val_dataloader`'s sampler has shuffling enabled, it is strongly recommended that you turn shuffling off for val/test/predict dataloaders.
+  category=PossibleUserWarning,
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:498: PossibleUserWarning: Your `test_dataloader`'s sampler has shuffling enabled, it is strongly recommended that you turn shuffling off for val/test/predict dataloaders.
+  category=PossibleUserWarning,

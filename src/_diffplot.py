@@ -16,6 +16,7 @@ import scvelo
 import PATH
 import anndata as ad
 from anndata import AnnData 
+from tqdm import tqdm
 import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
@@ -381,4 +382,59 @@ def merge_with_control(diffused_annData:AnnData, control_annData:AnnData, subsam
     sc.tl.leiden(merged_bdata)
     
     return merged_bdata
+
+def sample_Delta_X(yaml_path, sampling_repeat=100, n_workers=10, return_repeat=False):
+
+    # config
+    model_config_path = os.path.join(PATH.main_dir, yaml_path)
+    configs = _configure.Yaml_configurer(model_config_path)
+    print('Sample data using dataset class %s'%configs.dataset_class)
+
+    # dataloaders
+    print('preparing dataloaders ...')
+    dl_ls = dl_from_config(configs, shuffle=False)
+    adata_idx = np.concatenate([dl.dataset.adata.obs.index for dl in dl_ls], axis=0)
     
+    print('loading adata ...')
+    adata = sc.read(configs.anndata_path)
+    origin_idx = adata.obs.index
+    n = adata.shape[0]
+
+    def prograss_(x, turn_on):
+        if turn_on:
+            return tqdm(x)
+        else:
+            return x
+
+    turn_on1 = True if sampling_repeat > 3 else False
+    turn_on2 = not turn_on1
+
+    print('Sampling ...')
+    Delta_X_M = []
+
+    for r in prograss_(range(sampling_repeat), turn_on1):  # repeats
+        # print(r)
+        Delta_X_ls = []
+        # data_iterators = [iter(dl) for dl in dl_ls]
+        for dl in dl_ls:     # train val test
+            for X, batch_idx, c, delta_x, t in prograss_(dl, turn_on2):
+                Delta_X_ls.append(delta_x.cpu().numpy())
+            Delta_X_ay = np.concatenate(Delta_X_ls, axis=0)
+        Delta_X_M.append(Delta_X_ay)
+
+
+    if return_repeat:
+        # the index of cellbarcode to sort adata idx to its original order
+        sorter = [np.where(adata_idx == cb)[0] for cb in origin_idx]
+        Delta_X_M = np.stack([Delta_X_ay[sorter] for Delta_X_ay in Delta_X_M])
+        return Delta_X_M
+        
+    else:
+        Delta_X_M = np.stack(Delta_X_M).mean(axis=0)
+
+        # save the representatio to adata
+        adata_zc = adata[adata_idx].copy()
+
+        # return in the same order
+        adata_zc.obsm['delta_x'] = Delta_X_M
+        return adata_zc[origin_idx,:].obsm['delta_x']

@@ -1,0 +1,69 @@
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Missing logger folder: /data/users/wergillius/diffuse_differentiate/Equivalent_Diffuse_Sampler/Epsilon_Linear_mesc_5layer_k=15_traverse_d1/lightning_logs
+
+  | Name    | Type           | Params
+-------------------------------------------
+0 | model   | Epsilon_Linear | 2.3 M 
+1 | loss_fn | SmoothL1Loss   | 0     
+-------------------------------------------
+2.3 M     Trainable params
+0         Non-trainable params
+2.3 M     Total params
+9.165     Total estimated model params size (MB)
+Traceback (most recent call last):
+  File "script/main_train_with_PL_trainer.py", line 119, in <module>
+    trainer.fit(Sampler, train_loader, val_loader)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 697, in fit
+    self._fit_impl, model, train_dataloaders, val_dataloaders, datamodule, ckpt_path
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 650, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 735, in _fit_impl
+    results = self._run(model, ckpt_path=self.ckpt_path)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 1166, in _run
+    results = self._run_stage()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 1252, in _run_stage
+    return self._run_train()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 1283, in _run_train
+    self.fit_loop.run()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/loops/loop.py", line 200, in run
+    self.advance(*args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/loops/fit_loop.py", line 271, in advance
+    self._outputs = self.epoch_loop.run(self._data_fetcher)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/loops/loop.py", line 195, in run
+    self.on_run_start(*args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/loops/epoch/training_epoch_loop.py", line 147, in on_run_start
+    _ = iter(data_fetcher)  # creates the iterator inside the fetcher
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/utilities/fetching.py", line 179, in __iter__
+    self._apply_patch()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/utilities/fetching.py", line 120, in _apply_patch
+    apply_to_collections(self.loaders, self.loader_iters, (Iterator, DataLoader), _apply_patch_fn)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/utilities/fetching.py", line 156, in loader_iters
+    return self.dataloader_iter.loader_iters
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/supporters.py", line 544, in loader_iters
+    self._loader_iters = self.create_loader_iters(self.loaders)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/supporters.py", line 584, in create_loader_iters
+    return apply_to_collection(loaders, Iterable, iter, wrong_dtype=(Sequence, Mapping))
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/utilities/apply_func.py", line 99, in apply_to_collection
+    return function(data, *args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/torch/utils/data/dataloader.py", line 444, in __iter__
+    return self._get_iterator()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/torch/utils/data/dataloader.py", line 390, in _get_iterator
+    return _MultiProcessingDataLoaderIter(self)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/torch/utils/data/dataloader.py", line 1077, in __init__
+    w.start()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/multiprocessing/process.py", line 112, in start
+    self._popen = self._Popen(self)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/multiprocessing/context.py", line 223, in _Popen
+    return _default_context.get_context().Process._Popen(process_obj)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/multiprocessing/context.py", line 277, in _Popen
+    return Popen(process_obj)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/multiprocessing/popen_fork.py", line 17, in __init__
+    util._flush_std_streams()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/multiprocessing/util.py", line 435, in _flush_std_streams
+    sys.stdout.flush()
+OSError: [Errno 5] Input/output error
+Exception ignored in: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>
+OSError: [Errno 5] Input/output error

@@ -3,22 +3,21 @@
 # To run a new experiment, duplicate this yaml file and rename it
 
 # High level params
-epsilon_class: ODE_eps
-anndata_path: /ssd/users/wergillius/Project/Barcodelet/data/processed/integrated_mesendo_group_Nov4.h5ad
-sampler_class: ODE_learner
+epsilon_class: Epsilon_Linear
+anndata_path: /ssd/users/wergillius/Project/Barcodelet/data/processed/integrated_mesc_group0_Nov7.h5ad
+sampler_class: Equivalent_Diffuse_Sampler
 lr: 0.00001
 pretrain_embedder_pth: null
 fix_pretrain: false
-collect_time_span: 50
 epochs: 200
-
+max_degree: 1
+search_strategy: traverse
 # DataSet and Loader args
-dataset_class: ODE_dataset
+dataset_class: Diffuse_Dataset
 split_key: split
 batch_size: 32
-n_neighbor: 60
-max_degree: 5
-search_strategy: traverse
+n_neighbor: 15
+
 # some parameter fixed for integrated_mesendo
 unique_token_dict: unique_token_dict
 pseudotime_key: dpt_pseudotime

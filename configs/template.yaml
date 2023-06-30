@@ -3,7 +3,7 @@
 # To run a new experiment, duplicate this yaml file and rename it
 
 # High level params
-module_class: Epsilon_Linear
+epsilon_class: Epsilon_Linear
 anndata_path: cpa_datasets/Norman2019_prep_new.h5ad
 sampler_class: DDPM_Sampler
 pretrain_embedder_pth: null

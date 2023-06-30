@@ -1,0 +1,47 @@
+---
+# This is a example file for main train config
+# To run a new experiment, duplicate this yaml file and rename it
+
+# High level params
+epsilon_class: Epsilon_Linear
+anndata_path: /ssd/users/wergillius/Project/Barcodelet/data/processed/integrated_mesc_group0_Nov7.h5ad
+sampler_class: Equivalent_Diffuse_Sampler
+lr: 0.00001
+pretrain_embedder_pth: null
+fix_pretrain: false
+epochs: 200
+max_degree: 3
+search_strategy: expand
+# DataSet and Loader args
+dataset_class: Diffuse_Dataset
+split_key: split
+batch_size: 32
+n_neighbor: 15
+
+# some parameter fixed for integrated_mesendo
+unique_token_dict: unique_token_dict
+pseudotime_key: dpt_pseudotime
+condition_key: assignment
+max_multiplexing: 1
+use_batch_index: false
+exp_batch_key: ""
+delimiter: none
+layers: X
+
+# epsilon net args
+var_dim: 2000
+time_emb_dim: 128
+n_base_perturbs: 106
+condition_emb_dim: 128
+activation: Mish
+hidden_size:
+- 512
+- 128
+- 512
+
+# sampler args
+scheduler: linear_beta_schedule
+timesteps: 200
+loss_type: huber
+beta_start: 1e-8
+beta_end: 0.001

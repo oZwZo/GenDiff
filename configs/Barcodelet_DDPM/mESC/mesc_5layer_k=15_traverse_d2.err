@@ -1,0 +1,15 @@
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Missing logger folder: /data/users/wergillius/diffuse_differentiate/Equivalent_Diffuse_Sampler/Epsilon_Linear_mesc_5layer_k=15_traverse_d2/lightning_logs
+
+  | Name    | Type           | Params
+-------------------------------------------
+0 | model   | Epsilon_Linear | 2.3 M 
+1 | loss_fn | SmoothL1Loss   | 0     
+-------------------------------------------
+2.3 M     Trainable params
+0         Non-trainable params
+2.3 M     Total params
+9.165     Total estimated model params size (MB)

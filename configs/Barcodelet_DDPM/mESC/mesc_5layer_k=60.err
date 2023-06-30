@@ -1,0 +1,53 @@
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Missing logger folder: /data/users/wergillius/diffuse_differentiate/Equivalent_Diffuse_Sampler/Epsilon_Linear_mesc_5layer_k=60/lightning_logs
+
+  | Name    | Type           | Params
+-------------------------------------------
+0 | model   | Epsilon_Linear | 2.3 M 
+1 | loss_fn | SmoothL1Loss   | 0     
+-------------------------------------------
+2.3 M     Trainable params
+0         Non-trainable params
+2.3 M     Total params
+9.165     Total estimated model params size (MB)
+Traceback (most recent call last):
+  File "script/main_train_with_PL_trainer.py", line 120, in <module>
+    trainer.validate(Sampler, test_loader)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 774, in validate
+    return self._call_and_handle_interrupt(self._validate_impl, model, dataloaders, ckpt_path, verbose, datamodule)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 650, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 821, in _validate_impl
+    results = self._run(model, ckpt_path=self.ckpt_path)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 1166, in _run
+    results = self._run_stage()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 1249, in _run_stage
+    return self._run_evaluate()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 1295, in _run_evaluate
+    eval_loop_results = self._evaluation_loop.run()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/loops/loop.py", line 195, in run
+    self.on_run_start(*args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/loops/dataloader/evaluation_loop.py", line 136, in on_run_start
+    self._on_evaluation_start()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/loops/dataloader/evaluation_loop.py", line 248, in _on_evaluation_start
+    self.trainer._call_callback_hooks(hook_name, *args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/trainer/trainer.py", line 1597, in _call_callback_hooks
+    fn(self, self.lightning_module, *args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/callbacks/progress/tqdm_progress.py", line 275, in on_validation_start
+    self.val_progress_bar = self.init_validation_tqdm()
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/callbacks/progress/tqdm_progress.py", line 227, in init_validation_tqdm
+    file=sys.stdout,
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/pytorch_lightning/callbacks/progress/tqdm_progress.py", line 40, in __init__
+    super().__init__(*args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/tqdm/asyncio.py", line 24, in __init__
+    super(tqdm_asyncio, self).__init__(iterable, *args, **kwargs)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/tqdm/std.py", line 1107, in __init__
+    self.sp = self.status_printer(self.fp)
+  File "/ssd/users/wergillius/.conda/envs/cpa-env/lib/python3.7/site-packages/tqdm/std.py", line 340, in status_printer
+    getattr(sys.stdout, 'flush', lambda: None)()
+OSError: [Errno 5] Input/output error
+Exception ignored in: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>
+OSError: [Errno 5] Input/output error
