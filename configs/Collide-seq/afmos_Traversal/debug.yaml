@@ -4,9 +4,9 @@
 
 # High level params
 epsilon_class: Epsilon_Linear
-anndata_path: /home/wergillius/Project/diffuse_differentiate/data/TFAtlas/GSE217460_210322_TFAtlas_differentiated.h5ad
+anndata_path: /home/wergillius/Project/diffuse_differentiate/data/Collide-seq/adata_proc_hvg_May24.h5ad
 sampler_class: Equivalent_Diffuse_Sampler
-lr: 0.00001
+lr: 0.0003
 pretrain_embedder_pth: null
 fix_pretrain: false
 epochs: 200
@@ -20,24 +20,30 @@ n_neighbor: 15
 
 # some parameter fixed for integrated_mesendo
 unique_token_dict: unique_token_dict
-pseudotime_key: discrete_time
-condition_key: TF
-max_multiplexing: 1
+pseudotime_key: dpt_pseudotime
+condition_key: condition
+max_multiplexing: 3
 use_batch_index: false
 exp_batch_key: ""
-delimiter: none
+delimiter: ", "
 layers: X
 check_samples: false
+alpha: 1
+repeat: 1
 
 # epsilon net args
-gene_dim: 4806
+gene_dim: 4000
 time_emb_dim: 0
-n_base_perturbs: 3551
+n_base_perturbs: 18
 condition_emb_dim: 256
 activation: Mish
 hidden_size:
 - 512
+- 512
+- 512
 - 256
+- 512
+- 512
 - 512
 
 # sampler args

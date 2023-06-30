@@ -6,19 +6,19 @@
 epsilon_class: Epsilon_Linear
 anndata_path: /home/wergillius/Project/diffuse_differentiate/data/TFAtlas/GSE217460_210322_TFAtlas_differentiated.h5ad
 sampler_class: Equivalent_Diffuse_Sampler
-lr: 0.00001
+lr: 0.0003
 pretrain_embedder_pth: null
 fix_pretrain: false
 epochs: 200
 max_degree: 3
 search_strategy: traverse
 # DataSet and Loader args
-dataset_class: Traverse_Dataset
+dataset_class: Root_Diffuse
 split_key: split
 batch_size: 32
 n_neighbor: 15
 
-# some parameter fixed for integrated_mesendo
+# some parameter TF
 unique_token_dict: unique_token_dict
 pseudotime_key: discrete_time
 condition_key: TF
@@ -28,6 +28,7 @@ exp_batch_key: ""
 delimiter: none
 layers: X
 check_samples: false
+root_cell: null
 
 # epsilon net args
 gene_dim: 4806
@@ -37,7 +38,11 @@ condition_emb_dim: 256
 activation: Mish
 hidden_size:
 - 512
+- 512
+- 512
 - 256
+- 512
+- 512
 - 512
 
 # sampler args

@@ -27,7 +27,7 @@ use_batch_index: false
 exp_batch_key: ""
 delimiter: none
 layers: X
-check_samples: true
+check_samples: false
 
 # epsilon net args
 gene_dim: 4806

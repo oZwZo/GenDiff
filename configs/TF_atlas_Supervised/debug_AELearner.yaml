@@ -3,17 +3,20 @@
 # To run a new experiment, duplicate this yaml file and rename it
 
 # High level params
-epsilon_class: Epsilon_Linear
+epsilon_class: Epsilon_CAE
 anndata_path: /home/wergillius/Project/diffuse_differentiate/data/TFAtlas/GSE217460_210322_TFAtlas_differentiated.h5ad
-sampler_class: Equivalent_Diffuse_Sampler
+sampler_class: AE_learner
 lr: 0.00001
 pretrain_embedder_pth: null
 fix_pretrain: false
+use_batch_index: false
+epochs: 200
 epochs: 200
 max_degree: 3
-search_strategy: traverse
+
+
 # DataSet and Loader args
-dataset_class: Traverse_Dataset
+dataset_class: Supervised_AnnDataSet
 split_key: split
 batch_size: 32
 n_neighbor: 15
@@ -25,19 +28,21 @@ condition_key: TF
 max_multiplexing: 1
 use_batch_index: false
 exp_batch_key: ""
-delimiter: none
+delimiter: null
 layers: X
 check_samples: false
+label_key: a3_PathSampled_X
+input_rep: null
 
 # epsilon net args
 gene_dim: 4806
 time_emb_dim: 0
 n_base_perturbs: 3551
-condition_emb_dim: 256
+condition_emb_dim: 32
 activation: Mish
 hidden_size:
 - 512
-- 256
+- 128
 - 512
 
 # sampler args
