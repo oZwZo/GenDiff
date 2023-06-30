@@ -60,6 +60,7 @@ def dl_from_config(configs, shuffle=True, n_workers=4):
 
 ##             |\/|  _   _|     |  _           ##
 ##             |  | (_) (_| |_| | (/_          ##
+
 def get_model_from_config(configs, cuda):
 
     # - device -
@@ -123,10 +124,11 @@ if __name__ == '__main__':
     log_dir = os.path.join(path_n_util.pth_dir , config_dir, "{}_{}".format(configs.epsilon_class, run_name))
 
     trainer = pl.Trainer(
-            accelerator='gpu', devices=1,
+            accelerator='gpu', 
+            devices=1,
             auto_lr_find=True,
             # fast_dev_run = True,
-            # overfit_batches = args.overfit_batches,
+            overfit_batches = args.overfit_batches,
             default_root_dir=log_dir,
             max_epochs=200, 
             auto_select_gpus = False,

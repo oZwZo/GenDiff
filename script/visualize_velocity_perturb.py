@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser.add_argument("-C", "--model_checkpoint", type=str, required=True, help="the relative path of the checkpoint file, end with version_x")
     parser.add_argument("-S", "--save_prefix", type=str, default = 'Vis&Perb', required=False, help="the prefix to replace .h5ad")
     parser.add_argument("-P", "--perturb_conditions", type=str, required=False, 
-                        default = '["TFORF2078-FLI1", "TFORF0098-MSGN1", "TFORF2055-CDX1"]', 
+                        default = '[]', 
                         help="the condition to perturb , format ['c0' , 'c1', 'c2']")
     parser.add_argument("-D", "--device", type=int, default=2, required=False, help="the cuda to use")
     parser.add_argument("-J", "--jobs", type=int, default=5, required=False, help="the number of nodes to compute velocity graph")
