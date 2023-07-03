@@ -4,7 +4,7 @@
 
 # High level params
 epsilon_class: Epsilon_Linear
-anndata_path: /home/wergillius/Project/diffuse_differentiate/data/integrated_mesendo_group_Nov4.h5ad
+anndata_path: /home/wergillius/Project/diffuse_differentiate/data/Barcodelet/integrated_mesc_group0_Nov7.h5ad
 sampler_class: Equivalent_Diffuse_Sampler
 lr: 0.00001
 pretrain_embedder_pth: null
@@ -13,14 +13,11 @@ epochs: 200
 max_degree: 3
 search_strategy: traverse
 
-
 # DataSet and Loader args
 dataset_class: Traverse_Dataset
 split_key: split
 batch_size: 32
 n_neighbor: 15
-alpha: 1
-repeat: 10
 
 # some parameter fixed for integrated_mesendo
 unique_token_dict: unique_token_dict
@@ -31,20 +28,20 @@ use_batch_index: false
 exp_batch_key: ""
 delimiter: none
 layers: X
-check_samples: false
-label_key: a3_PathSampled_X
-input_rep: null
+alpha: 1
+repeat: 10
 
 # epsilon net args
-var_dim: 2000
-time_emb_dim: 128
+gene_dim: 2000
+time_emb_dim: 0
 n_base_perturbs: 106
-condition_emb_dim: 128
+condition_emb_dim: 64
 activation: Mish
+last_batch_norm: true
 hidden_size:
-- 512
-- 128
-- 512
+- 256
+- 64
+- 256
 
 # sampler args
 scheduler: linear_beta_schedule
