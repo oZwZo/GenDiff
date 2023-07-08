@@ -20,6 +20,7 @@ from tqdm import tqdm
 import anndata as ad
 from anndata import AnnData 
 import seaborn as sns
+from matplotlib import cm
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 sys.path.append(os.path.join(PATH.main_dir, "script"))
@@ -33,7 +34,7 @@ mesc_marker_genes={
         "Paraxial mesoderm" : ["Tbx6", "Dll1", "Aldh1a2", "Cited1"],
         "Allantois": ["Hand1", "Plac1", "Tgfb2", "Pitx1"],
         # "Anterior Primitive Streak" : ["Gsc", "Eomes", "Lhx1", "Otx2"],
-        "Somitic mesoderm: Meox1": ["Meox1","Foxc2", "Gas1", "Ebf1"],
+        "Somitic mesoderm": ["Meox1","Foxc2", "Gas1", "Ebf1"],
         # "Primitive hematopoietic" : ["Tal2", "Cdx4", "Itga4", "Ephb1"],
         "Notochord": ["Foxa2", "T", "Foxj1", "Slit2"]
 }
@@ -63,9 +64,30 @@ def get_ckpt_path(relative_path):
     else: 
         return abs_paths
     
-def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10,device=3):
+def plot_representation(yaml_path, ckpt_path, use_rep='z_c', n_neighbors = 10, device=3):
     
-    
+    r"""
+    reload the trained model, extract the latent and compute delta X
+
+    Inputs:
+    ---------
+    yaml_path : str, relative path of the model config 
+    ckpt_path : str, relative path of the saved checkpoint, ends with '***/version_x'
+    use_rep : str from ('z_c', 'z', 'c'), which representation to use to 
+    n_neighbors : int,
+    device :
+
+    Returns:
+    ---------
+    adata_zc : a new adata with extracted latent stored in obsm 'z_c', 'z', 'c'
+    pl_model : the reloaded learner with eps_net loaded.
+
+    Examples:
+    -----------
+    >>>config_path = "configs/Barcodelet/mesc_5layer_k=15_traverse_notime.yaml"
+    >>>relative_ckpt = "Barcodelet/Epsilon_Linear_mesc_5layer_k=15_traverse_notime/lightning_logs/version_0"
+
+    """
     device = device if torch.cuda.is_available else 'cpu'
 
     # config
@@ -298,6 +320,11 @@ def reload_sampler(yaml_file, ckpt_path, device):
 
     module_kw = configs.epsilon_kwargs
     Module_Class = eval("_epsilon_module.%s" %configs.epsilon_class)
+    try:
+        if configs.last_batch_norm:
+            module_kw.update({'last_batch_norm':True})
+    except AttributeError:
+        pass
     eps_net = Module_Class(**module_kw).to('cpu')
 
     v0_ckpt = get_ckpt_path(
@@ -345,6 +372,83 @@ def reload_sampler(yaml_file, ckpt_path, device):
 
     # Sampler = Samper_Class(**sampler_kwargs)
     return pl_model
+
+
+def compute_velocity(adata, velocity_matrix,n_neighbors=None, **kwargs):
+    adata1 = adata.copy()
+    assert velocity_matrix.shape == adata1.X.shape
+    adata1.layers['velocity'] = velocity_matrix
+    adata1.layers['X'] = adata1.X
+
+    if n_neighbors is not None:
+        del adata1.uns['neighbors']
+        sc.pp.neighbors(adata1, n_neighbors=n_neighbors)
+    
+    # scvelo.tl.velocity_graph(adata1, xkey='X', n_neighbors=n_neighbors,**kwargs)
+    scvelo.tl.velocity_graph(adata1, xkey='X',**kwargs)
+    return adata1
+
+
+
+
+@torch.no_grad()
+def extrapolate(T_extrapolate, yaml_path, ckpt_path, direction='plus', device=3):
+    # config
+    model_config_path = os.path.join(PATH.main_dir, yaml_path)
+    configs = _configure.Yaml_configurer(model_config_path)
+    
+    # dataloaders
+    dl_ls = dl_from_config(configs, shuffle=False)
+    adata_idx = np.concatenate([dl.dataset.adata.obs.index for dl in dl_ls], axis=0)
+
+    adata = sc.read(configs.anndata_path)
+    origin_idx = adata.obs.index
+    n = adata.shape[0]
+    ts = round(n**2 * (6/30000**2), 2)
+    print(f"loadin adata with {n} cells, which normally takes around {ts} mins")
+    
+    v0_ckpt = get_ckpt_path(
+        ckpt_path
+            )
+
+    # models
+    pl_model = reload_sampler(model_config_path,ckpt_path , device)
+    pl_model.eval();
+
+
+    Delta_X = []
+
+    with torch.no_grad():
+        for dl in dl_ls:
+            for X, batch_idx, c, noise, t in tqdm(dl):
+                if device != 'cpu':
+                    c = c.to(device)
+                    X = X.to(device)
+                    t = t.to(device)
+
+                for j in range(T_extrapolate):
+
+                    output = pl_model.model(X, c , None , t)
+                    dx = output[0] if pl_model.model.variational else output
+                    
+                    if direction == 'minus':
+                        X = X - dx
+                    elif direction == 'plus':
+                        X = X + dx
+
+                Delta_X.append(X.detach().cpu().numpy())
+                
+
+    # save the representatio to adata
+    adata_pred = adata[adata_idx].copy()
+
+    # prediction
+    adata_pred.X = np.concatenate(Delta_X, axis=0)
+    adata_pred.obs['T_extrapolate'] = T_extrapolate
+    adata_pred[origin_idx].copy()
+    adata_pred.obs.index = [idx+"_pred%d"%T_extrapolate for idx in adata_pred.obs.index]
+    return adata_pred
+
 
 def condition_on_umap(adata, c1, basis='umap', 
                                 subplot_kw={"dpi":100, "figsize":(5,4)},):
@@ -542,18 +646,7 @@ def triple_plot(annData:AnnData, color_key:str, dpi:int=100, **kwargs):
         sns.despine(ax=ax)
     return fig, axs
 
-def compute_velocity(adata, velocity_matrix,n_neighbors=None, **kwargs):
-    adata1 = adata.copy()
-    assert velocity_matrix.shape == adata1.X.shape
-    adata1.layers['velocity'] = velocity_matrix
-    adata1.layers['X'] = adata1.X
 
-    if n_neighbors is not None:
-        del adata1.uns['neighbors']
-        sc.pp.neighbors(adata1, n_neighbors=n_neighbors)
-    
-    scvelo.tl.velocity_graph(adata1, xkey='X', n_neighbors=n_neighbors,**kwargs)
-    return adata1
 
 
 def merge_with_control(diffused_annData:AnnData, control_annData:AnnData, subsample_control:float=1):
@@ -594,4 +687,115 @@ def merge_with_control(diffused_annData:AnnData, control_annData:AnnData, subsam
     sc.tl.leiden(merged_bdata)
     
     return merged_bdata
+
+
+def plot_transit_cells(adata, starting_cell = None, backward=False , n_steps=100, ax=None, random_state=None, **kwargs):
+    """
+    Arguments
+    ---------
+    adata: :class:`~anndata.AnnData`
+        Annotated data matrix.
+    starting_cell: `int` (default: `0`)
+        Index (`int`) or name (`obs_names`) of starting cell.
+    n_steps: `int` (default: `100`)
+        Number of transitions/steps to be simulated.
+    backward: `bool` (default: `False`)
+        Whether to use the transition matrix to push forward (`False`) or to pull backward (`True`)
+    random_state: `int` or `None` (default: `None`)
+        Set to `int` for reproducibility, otherwise `None` for a random seed.
+    **kwargs:
+        To be passed to scvelo.tl.transition_matrix.
     
+    """
+    if starting_cell is None:
+        starting_cell = adata.uns['iroot']
+
+    x,y = scvelo.utils.get_cell_transitions(adata, 
+            starting_cell = starting_cell, basis='umap', backward=backward, n_steps=n_steps,random_state=random_state, **kwargs)
+
+
+    # visualize
+    if ax is None:
+        fig, ax = plt.subplots(1,1, figsize=(5,4), dpi=200)
+
+    ax.scatter(adata.obsm['X_umap'][:,0],  adata.obsm['X_umap'][:,1],  s=10, color = 'lightgray')
+    # ax.scatter(adata.obsm['X_umap'][11124,0],  adata.obsm['X_umap'][11124,1], s=2)
+    n = len(x)
+    for i in range(n):
+        ax.scatter(x[i], y[i], color = cm.gnuplot(i/n))
+        
+    ax.axis("off")
+
+def get_cell_transitions(
+    adata,
+    starting_cell=0,
+    basis=None,
+    n_steps=100,
+    n_neighbors=30,
+    backward=False,
+    random_state=None,
+    **kwargs,
+):
+    """Simulate cell transitions.
+
+    Arguments
+    ---------
+    adata: :class:`~anndata.AnnData`
+        Annotated data matrix.
+    starting_cell: `int` (default: `0`)
+        Index (`int`) or name (`obs_names`) of starting cell.
+    n_steps: `int` (default: `100`)
+        Number of transitions/steps to be simulated.
+    backward: `bool` (default: `False`)
+        Whether to use the transition matrix to push forward (`False`) or to pull backward (`True`)
+    random_state: `int` or `None` (default: `None`)
+        Set to `int` for reproducibility, otherwise `None` for a random seed.
+    **kwargs:
+        To be passed to tl.transition_matrix.
+
+    Returns
+    -------
+    Returns embedding coordinates (if basis is specified),
+    otherwise return indices of simulated cell transitions.
+    """
+    np.random.seed(random_state)
+    if isinstance(starting_cell, str) and starting_cell in adata.obs_names:
+        starting_cell = adata.obs_names.get_loc(starting_cell)
+    X = [starting_cell]
+    T = scvelo.utils.get_transition_matrix(
+        adata,
+        # perc=1,
+        # weight_indirect_neighbors=0.5,
+        backward=False,
+        basis_constraint='umap',
+        self_transitions=False,
+        **kwargs
+    )
+
+    
+    for _ in range(n_steps):
+        t = T[X[-1]]
+        indices, p = t.indices, t.data
+        if n_neighbors is not None and n_neighbors < len(p):
+            idx = np.argsort(t.data)[::-1][:n_neighbors]
+            indices, p = indices[idx], p[idx]
+        if len(p) == 0:
+            indices, p = [X[-1]], [1]
+        if np.any(p < 0):
+            p = p - p.min()
+        p /= np.sum(p)
+
+        if np.any(np.isnan(p)):
+            p = np.where(np.isnan(p),0, p)
+            p /= np.sum(p)
+            if np.any(np.isnan(p)):
+                indices, p = [X[-1]], [1]
+
+        ix = np.random.choice(indices, p=p)
+        X.append(ix)
+    X = pd.unique(X)
+    if basis is not None and f"X_{basis}" in adata.obsm.keys():
+        X = adata.obsm[f"X_{basis}"][X].T
+    if backward:
+        X = np.flip(X, axis=-1)
+    return X

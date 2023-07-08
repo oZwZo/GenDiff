@@ -206,6 +206,117 @@ class Condition_AnnDataSet(AnnDataSet):
 
         return exp_mat, batch_idx, condition_idx, [], [] # noise and t is empty
 
+class Supervised_AnnDataSet(Condition_AnnDataSet):
+    def __init__(self, 
+            AnnData : AnnData, 
+            label_key: str,
+            unique_token_dict : Union[dict, str],
+            input_rep = None,
+            pseudotime_key : str = 'dpt_pseudotime',
+            condition_key : str = 'condition',
+            max_multiplexing : int = 2,
+            use_batch_index : bool = False,
+            exp_batch_key : str = 'batch', 
+            delimiter : str = "+",
+            layers:str ='counts', 
+            split_key:str = 'split', 
+            which_set: str ='train'):
+        super().__init__(AnnData, unique_token_dict, condition_key,max_multiplexing, 
+                            use_batch_index, exp_batch_key, delimiter, layers, split_key, which_set)
+        
+        self.pseudotime_key = pseudotime_key
+        self.label_key = label_key
+        self.input_rep = input_rep
+
+        if label_key in self.adata.obs_keys():
+            self.Y = self.adata.obs[label_key].values
+        elif label_key in self.adata.obsm_keys():
+            self.Y = self.adata.obsm[label_key].values
+        elif label_key in self.adata.layers.keys():
+            self.Y = self.adata.layers[label_key].copy()
+        else:
+            raise KeyError("invalid label key")
+        
+        if input_rep is None:
+            pass
+        elif input_rep in self.adata.obsm_keys():
+            self.X = self.adata.obsm[input_rep].values
+        elif input_rep in self.adata.layers.keys():
+            self.X = self.adata.layers[input_rep].copy()
+        else:
+            raise KeyError("invalid input representation")
+        
+        self.T = self.adata.obs['discrete_time'].values
+        
+    # @property
+    # def T(self):
+    #     """
+    #     generate discreted timepoint from pseudo-time
+    #     """
+    #     if "discrete_time" not in self.adata.obs_keys():
+    #         def discrete_time(x):
+    #             x = int(x*250)
+    #             mid_err = np.random.randint(-2,2) # smooth the time
+    #             tail_err = np.random.randint(0,10)
+    #             return min(max(0,x+mid_err), 200-tail_err)
+
+    #         self.adata.obs['discrete_time'] = self.adata.obs[self.pseudotime_key].apply(discrete_time)
+
+    #     return self.adata.obs['discrete_time'].values
+    
+    def __getitem__(self, i):
+        exp_mat = self.X[i]
+        t = self.T[i]
+        deltaX = self.Y[i]
+
+        split_tokens = self.multipx_conditions[i].split(self.delimiter)
+        n_tokens = len(split_tokens)
+
+        # we pad the token list to maximal muultiplexing 
+        # pad with the null key 
+        if len(split_tokens) < self.max_multiplexing:
+            split_tokens += [self.null_cond_key]*(self.max_multiplexing - n_tokens)
+
+        condition_idx = np.array([self.unique_token_dict[token] for token in split_tokens])
+
+        if self.use_batch_index:
+            batch_idx = self.exp_batch[i]
+        
+        else:
+            batch_idx=[]
+
+        return exp_mat, batch_idx, condition_idx, deltaX, t
+
+
+class Dummy_condition_AnnDataSet(Condition_AnnDataSet):
+    def __init__(self, 
+            AnnData : AnnData, 
+            label_key: str,
+            unique_token_dict : Union[dict, str],
+            input_rep = None,
+            pseudotime_key : str = 'dpt_pseudotime',
+            condition_key : str = 'condition',
+            max_multiplexing : int = 2,
+            use_batch_index : bool = False,
+            exp_batch_key : str = 'batch', 
+            delimiter : str = "+",
+            layers:str ='counts', 
+            split_key:str = 'split', 
+            which_set: str ='train'):
+        super().__init__(AnnData, unique_token_dict, condition_key,max_multiplexing, 
+                            use_batch_index, exp_batch_key, delimiter, layers, split_key, which_set)
+        
+        self.n_token = np.max(list(self.unique_token_dict.values())) + 1
+    
+    def __getitem__(self, i):
+        exp_mat, batch_idx, condition_idx, deltaX, t = super().__getitem__(i)
+
+        c_onehot = np.zeros((self.n_token))
+        for c in condition_idx:
+            c_onehot[c] = 1
+        return exp_mat, batch_idx, c_onehot, deltaX, t
+
+
 class Traverse_Dataset(Condition_AnnDataSet):
     def __init__(self, 
                 AnnData : AnnData, 
@@ -239,7 +350,7 @@ class Traverse_Dataset(Condition_AnnDataSet):
         #    
         self.free_search_degree = 3
 
-        self.raw_X = self.adata_raw.X
+        self.raw_X = torch.from_numpy(self._to_dense(self.adata_raw.X)).float()
         self.raw_i = self.adata_raw.obs_names
         self.raw_C = self.adata_raw.obs[condition_key].values
         self.raw_T = self.adata_raw.obs['discrete_time'].values
@@ -651,7 +762,7 @@ class Path_Diffuse(Diffuse_Dataset):
         self.alpha = alpha
         self.repeat = repeat
 
-        self.raw_X = self.adata_raw.X
+        self.raw_X = torch.from_numpy(self.adata_raw.X).float()
         self.raw_i = self.adata_raw.obs_names
         self.raw_C = self.adata_raw.obs[condition_key].values
         self.raw_T = self.adata_raw.obs['discrete_time'].values
@@ -732,9 +843,9 @@ class Path_Diffuse(Diffuse_Dataset):
                 
 
             elif len(meet_both) == 1:
-                neighbor_idx = meet_both[0]
+                neighbor_idx = [meet_both[0]]
                 note = 'Single future state'
-                step = depth_from_i[neighbor_idx]
+                step = [depth_from_i[neighbor_idx]]
                 
             else:
                 # the idea situation
@@ -773,11 +884,15 @@ class Path_Diffuse(Diffuse_Dataset):
             X = self.X[i]
             X_next = self.raw_X[neighbor_idx]
             if len(neighbor_idx) > 0:
-                X_next = X.mean(axis=0)
-            delta_X = (X - X_next) 
+                X_next = X_next.mean(axis=0)
+            # delta_X = (X - X_next) #?????
+            delta_X = (X_next - X ) #?????
         
         else:
             raise ValueError("Undefined scenario")
+
+        # flip !!!
+        # delta _X = -1 * delta_X
         
         split_tokens = c_string.split(self.delimiter)
         n_tokens = len(split_tokens)

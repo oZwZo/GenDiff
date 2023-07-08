@@ -210,6 +210,7 @@ class Epsilon_Linear(Epsilon_base):
                 hidden_size: list = [256,128,256],
                 activation : Union[str, nn.Module] = "Mish",
                 pretrained_embeddings : nn.Module = None,
+                last_batch_norm: nn.Module = True
                 ) :
         super().__init__(gene_dim, time_emb_dim, n_base_perturbs, condition_emb_dim, use_batch_index, activation, pretrained_embeddings)
         
@@ -240,7 +241,7 @@ class Epsilon_Linear(Epsilon_base):
         self.activation = activation
         self.latent_activator = self.act_fn()
         encoder = self.define_block(encoder_dims, batch_norm=False)
-        decoder = self.define_block(decoder_dims)
+        decoder = self.define_block(decoder_dims, True, last_batch_norm)
         
         self.epsilon_theta = nn.ModuleDict(
             {'encoder': nn.Sequential(OrderedDict(encoder)), 
@@ -249,7 +250,7 @@ class Epsilon_Linear(Epsilon_base):
         
         # time embeddings
 
-    def define_block(self,dims, batch_norm=True):
+    def define_block(self,dims, batch_norm=True, last_batch_norm=False):
         encoder = []
         for input_dim, output_dim in zip(dims[:-1], dims[1:]):
             encoder.append((f'linear_{self.i}', nn.Linear(input_dim, output_dim)))
@@ -258,8 +259,9 @@ class Epsilon_Linear(Epsilon_base):
                     encoder.append((f'BatchNorm_{self.i}', nn.BatchNorm1d(output_dim)))
                 encoder.append((f'{self.activation}_{self.i}', self.act_fn()))
             else:
+                if last_batch_norm:
+                    encoder.append((f'BatchNorm_{self.i}', nn.BatchNorm1d(output_dim)))
                 # no activation for the latent layer
-                pass
             self.i+=1
         return encoder
 
@@ -289,6 +291,42 @@ class Epsilon_Linear(Epsilon_base):
         z_c_act = self.act_fn()(z_c)
         return self.epsilon_theta['decoder'](z_c_act)
 
+    def get_DeltaX(self, batch_data):
+        return batch_data[-2]
+    
+class Epsilon_Categorical(nn.Module):
+    def __init__(self, 
+                gene_dim: int, 
+                time_emb_dim : int,
+                n_base_perturbs : int,
+                condition_emb_dim : int,
+                use_batch_index : bool,
+                hidden_size: list = [256,128,256],
+                activation : Union[str, nn.Module] = "Mish",
+                pretrained_embeddings : nn.Module = None,
+                ) :
+        super().__init__()
+
+        self.input_dim = gene_dim + n_base_perturbs
+        self.gene_dim = gene_dim
+
+        if hidden_size is None:
+            self.full_model = nn.Linear(self.input_dim, self.gene_dim)
+        else:
+            dimensions = [self.input_dim] + hidden_size 
+            layers = [nn.Sequential(nn.Linear(in_dim, out_dim), nn.Mish(), nn.BatchNorm1d(out_dim)) 
+                        for in_dim, out_dim in zip(dimensions[:-1], dimensions[1:])]
+            layers += [nn.Linear(dimensions[-1], self.gene_dim)]
+
+            self.full_model = nn.Sequential(*layers)
+
+    def forward(self, x_0, c, batch = None, t_0 = None):
+
+        X = torch.cat([x_0,c], axis=1).float()
+
+        return self.full_model(X)
+        
+    
 class Epsilon_AttnCondition(Epsilon_Linear):
     def __init__(self, 
                 gene_dim: int, 
@@ -384,7 +422,8 @@ class Epsilon_CAE(Epsilon_Linear):
             'decoder': nn.Sequential(OrderedDict(decoder)),
             })
 
-        self.loss_fn = nn.MSELoss()
+        self.loss_fn = nn.SmoothL1Loss()
+        # self.loss_fn = nn.MSELoss()
         # time embeddings
 
     def encode(self, x_0, c, batch, t_0):

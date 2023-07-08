@@ -27,6 +27,59 @@ class SinoidalPositionEmbeddings(nn.Module):
         return embeddings
 
 
+class MLP(nn.Module):
+    def __init__(self, dimensions, use_batchnorm=True, use_dropout=0, skip_connection=False, activation_fn='ReLU', output_activation=None):
+        super().__init__()
+        self.act_fn = eval(f"nn.{activation_fn}")
+        self.dimensions = dimensions
+        self.n_layer = len(dimensions) - 1
+
+        p = use_dropout
+
+        if skip_connection == 'auto':
+            self.skip_connection = True if self.n_layer > 2 else False
+        else:
+            self.skip_connection = skip_connection
+
+        # define model
+        self.model = nn.ModuleList()
+        for dim_in, dim_out in zip(dimensions[:-1],dimensions[1:]):
+
+            ## define block
+            block = []
+            block.append( nn.Linear(dim_in, dim_out) )
+
+            if dim_out == dimensions[-1]:
+                if output_activation is not None:
+                    self.out_act_fn = eval(f"nn.{output_activation}")
+                    block.append( self.out_act_fn() )
+            else:
+                block.append( self.act_fn() )
+
+            if use_batchnorm & (dim_out != dimensions[-1]):
+                block.append( nn.BatchNorm1d(dim_out) )
+
+            if (p != 0) & (dim_out != dimensions[-1]):
+                block.append( nn.Dropout(p) )
+            
+            ## insert block
+            self.model.append( nn.Sequential(*block) )
+
+    def forward(self, X):
+        
+        for block in self.model:
+            out = block(X)
+            
+            # skip connect
+            if self.skip_connection==True:
+                linear = block[0]
+                if linear.in_features == linear.out_features:
+                    out = X + out
+            
+            X = out
+
+        return out
+
 class SelfAttention(nn.Module):
     r"""
     Multi-head self attention module 

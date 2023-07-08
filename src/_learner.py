@@ -376,14 +376,15 @@ class DiffusionSampler_base(pl.LightningModule):
                 metric_t = self._shared_eval_step(x_0, t, batch , c, noise, self.metric_func)
 
                 for k, v in metric_t.items():
-                    metric_records[k].append(v)
-            metrics = {"test_%s"%k:torch.mean(v) for k,v in metric_records.items()} # take the mean
-            metrics["t_MaxError"] = torch.argmax(metric_records["loss"])
+                    metric_records[k].append(v.detach().cpu().numpy())
+            metrics = {"val_%s"%k:np.mean(v) for k,v in metric_records.items()} # take the mean
+            metrics["t_MaxError"] = np.argmax(metric_records["loss"])
         else:
             metrics = self._shared_eval_step(x_0, t, batch , c, noise, self.metric_func)
-        
+            metrics = {"val_%s"%k:v for k,v in metrics.items()}
         self.log_dict(metrics)
         return metrics
+
 
 
 
@@ -589,6 +590,45 @@ class Equivalent_Diffuse_Sampler(DiffusionSampler_base):
         self.log_dict(train_metrics)
         return metrics['loss']
 
+
+class Weight_l2_sampler(Equivalent_Diffuse_Sampler):
+    def __init__(self, model, scheduler: str, 
+                       loss_type : str, 
+                       weight_decay=None, 
+                       l2_weight=0, 
+                       timesteps=200, 
+                       **scheduler_kwargs):
+        super().__init__(model=model, scheduler=scheduler, timesteps=timesteps, loss_type=loss_type,  **scheduler_kwargs)
+        self.weight_decay = weight_decay
+        self.l2_weight = l2_weight
+
+    def configure_optimizers(self):
+        lr = 1e-3
+
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=self.weight_decay)
+        return optimizer
+
+    def training_step(self, train_batch, batch_idx):
+        # get data from batch
+        x_0, exp_batch, c, noise, t = train_batch
+        if len(exp_batch) == 0:
+            exp_batch = None
+
+        device = x_0.device
+        if len(t) == 0:
+            t = torch.randint(0, self.total_timestep-1, (x_0.shape[0], ), device=device).long()
+
+        if len(noise) == 0:
+            noise = torch.randn_like(x_0)
+
+        metrics = self._shared_step(x_0, t,  exp_batch, c, noise, self.metric_func)
+        train_metrics = {"train_%s"%k:v for k,v in metrics.items()}
+        self.log_dict(train_metrics)
+
+        l2_reg = torch.norm(next(self.model.epsilon_theta.encoder.linear_0.parameters()))
+        
+        loss = metrics['loss'] + self.l2_weight * l2_reg
+        return loss
 
 class ODE_learner(pl.LightningModule):
     def __init__(self, model:nn.Module, loss_type:str):

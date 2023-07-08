@@ -67,28 +67,19 @@ class Linear_model(base):
         return self.model(X)
 
 
-class CAE_model(Linear_model):
-    def __init__(self, input_dim, output_dim, hidden, lr, weight_decay):
-        super().__init__(input_dim, output_dim, lr, weight_decay)
+class CAE_model(base):
+    def __init__(self, encoder_kwargs, decoder_kwargs, lr, weight_decay):
+        super().__init__(None, decoder_kwargs['dimensions'][-1], lr, weight_decay)
 
-        bottlenet = (len(hidden)-1)//2
-        self.bottlenet = bottlenet
-        self.latent = hidden[bottlenet]
-
-        encoder_dims = [input_dim] + hidden[:bottlenet+1]
-        decoder_dims = hidden[bottlenet:]
-        self.encoder = _helper_net.MLP(encoder_dims, use_batchnorm=True, use_dropout=0)
         
+        self.latent = encoder_kwargs['dimensions'][-1]
 
-        self.decoder = nn.Sequential(
-            _helper_net.MLP(decoder_dims, use_batchnorm=True, use_dropout=0),
-            nn.Linear(hidden[-1], output_dim)
-            )
+        self.encoder_dims = encoder_kwargs['dimensions']
+        self.decoder_dims = decoder_kwargs['dimensions']
 
-        self.model = nn.Sequential(
-             self.encoder,
-             self.decoder
-        )
+        self.encoder = _helper_net.MLP(**encoder_kwargs)
+        self.decoder = _helper_net.MLP(**decoder_kwargs)
+
 
     def encode(self, X):
         return self.encoder(X)
@@ -101,6 +92,7 @@ class LatentAdd_CAE(base):
     def __init__(self, input_dim, condition_dim, output_dim, hidden, lr, weight_decay):
         super().__init__(input_dim,  output_dim, lr, weight_decay)
 
+        self.gene_dim = input_dim - condition_dim
         self.condition_dim = condition_dim
 
         bottlenet = (len(hidden)-1)//2
@@ -119,40 +111,83 @@ class LatentAdd_CAE(base):
             )
 
     def forward(self, X):
-        C = X[:,-1*self.condition_dim:]
+        x_gene, C = torch.tensor_split(X, (self.gene_dim,), dim=1)
         z = self.encoder(X)
         z_c = torch.cat([z,C], dim=1)
         return self.decoder(z_c)
     
 class Embedding_model(base):
-    def __init__(self, gene_dim, embedding_dim, output_dim, hidden, lr, weight_decay):
-        super().__init__(gene_dim, output_dim, lr, weight_decay)
+    def __init__(self, condition_dim, encoder_kwargs, decoder_kwargs, lr, weight_decay):
+        super().__init__(None, decoder_kwargs['dimensions'][-1], lr, weight_decay)
 
-        bottlenet = (len(hidden)-1)//2
-        self.latent = hidden[bottlenet]
-
-        encoder_dims = [gene_dim] + hidden[:bottlenet+1]
-        decoder_dims = hidden[bottlenet:]
-        decoder_dims[0] = self.latent + 32
-
-        self.encoder = _helper_net.MLP(encoder_dims, use_batchnorm=True, use_dropout=0)
+        self.latent = encoder_kwargs['dimensions'][-1]
+        self.condition_dim = condition_dim
+        self.gene_dim = encoder_kwargs['dimensions'][0] # - condition_dim
         
-        self.embedder = nn.Embedding(embedding_dim, 32)
+        # dimensions
+        self.encoder_dims = encoder_kwargs['dimensions']
+        self.decoder_dims = decoder_kwargs['dimensions']
 
-        self.decoder = nn.Sequential(
-            _helper_net.MLP(decoder_dims, use_batchnorm=True, use_dropout=0),
-            nn.Linear(hidden[-1], output_dim)
-            )
-
+        # models
+        self.embedder = nn.Embedding(condition_dim, 32)
+        self.encoder = _helper_net.MLP(**encoder_kwargs)
+        self.decoder = _helper_net.MLP(**decoder_kwargs)
+        
     def encode(self, X):
-        X_gene = X[:,:50]
-        X_condition = torch.argmax(X[:,50:], dim=1)
-
+        X_gene, X_condition = torch.tensor_split(X, (self.gene_dim,), dim=1)
+        
         Z_x = self.encoder(X_gene)
-        Z_c = self.embedder(X_condition)
+        # Z_c = self.embedder(X_condition.long())
+        Z_c = X_condition @ self.embedder.weight
 
-        return torch.concat([Z_x , Z_c], axis=1)
+        return torch.cat([Z_x , Z_c], axis=1)
 
     def forward(self, X):
         z = self.encode(X)
         return self.decoder(z)
+    
+
+class Pretrained_GenDiff(base):
+    def __init__(self, gene_dim, condition_dim, pretrain_model, prior_coef, prior_intercept, lr, weight_decay, update_fc=True, update_pretrain=True):
+        super().__init__(gene_dim + condition_dim, prior_coef.shape[1], lr, weight_decay)
+        
+        # dimensions
+        self.gene_dim = gene_dim
+        self.condition_dim = condition_dim
+        self.input_dim = gene_dim + condition_dim
+
+        # prior
+        self.update_fc = update_fc
+        self.prior_coef = torch.from_numpy(prior_coef).float()
+        self.prior_intercept = torch.from_numpy(prior_intercept).float()
+
+        # models
+        self.update_pretrain = update_pretrain
+        self.pretrain_model = pretrain_model
+        self.fc_output = nn.Linear(self.input_dim, gene_dim)
+        self.insert_prior(update=self.update_fc)
+
+        # update pretrian
+        if not self.update_pretrain:
+            for p in self.pretrain_model.parameters():
+                p.requires_grad = False
+
+    def insert_prior(self, update):
+        self.fc_output.weight = torch.nn.Parameter(self.prior_coef, requires_grad = update)
+        self.fc_output.bias = torch.nn.Parameter(self.prior_intercept, requires_grad = update)
+
+    def configure_optimizers(self):
+        return super().configure_optimizers()
+    
+    def encode(self,X):
+        return self.pretrain_model.encode(X)
+
+    def forward(self, X):
+        X_gene, X_condition = torch.tensor_split(X, (self.gene_dim,), dim=1)
+
+        X_upsampled = self.pretrain_model.forward(X)
+        X_out = torch.cat([X_upsampled, X_condition], dim=1)
+        delta_X_upsampled = self.fc_output(X_out)
+        delta_X_straight = self.fc_output(X)
+
+        return (delta_X_upsampled + delta_X_straight)/2
