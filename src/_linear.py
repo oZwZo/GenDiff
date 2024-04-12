@@ -145,6 +145,102 @@ class Embedding_model(base):
     def forward(self, X):
         z = self.encode(X)
         return self.decoder(z)
+
+class Latent_Interaction(Embedding_model):
+    def __init__(self, condition_dim, encoder_kwargs, decoder_kwargs, embedding_dim, lr, weight_decay, control_token=-2):
+        """Latent Interaction model
+
+        Args:
+            condition_dim (int): the number of unique singleton perturbations
+            encoder_kwargs (dict): dict of parameters
+            decoder_kwargs (dict): dict of parameters
+            embedding_dim (int): the dimension of condition embeddings and also the reduced z_x
+            lr (float): learning rate for optimizer
+            weight_decay (float): weight decay for optimizer
+        """
+        super().__init__(condition_dim, encoder_kwargs, decoder_kwargs, lr, weight_decay)
+
+        self.latent = encoder_kwargs['dimensions'][-1]
+        self.condition_dim = condition_dim
+        self.gene_dim = encoder_kwargs['dimensions'][0] # - condition_dim
+        self.control_token = control_token if control_token > 0 else condition_dim - control_token
+        
+        # dimensions
+        self.encoder_dims = encoder_kwargs['dimensions']
+        self.decoder_dims = decoder_kwargs['dimensions']
+
+        # models
+        self.embedder = nn.Embedding(condition_dim, embedding_dim)
+        self.zx_project = nn.Linear(self.encoder_dims[-1], embedding_dim)
+
+        self.encoder = _helper_net.MLP(**encoder_kwargs)
+        self.decoder = _helper_net.MLP(**decoder_kwargs)
+
+    def process_conditions(self, X_condition):
+        """collapse multiple tokens
+        Args:
+            X_condition (torch.Tensor): one hot encoded TF vectors
+        """
+        device = X_condition.device
+        n_condition = X_condition.sum(axis=1)
+        maxm = torch.max(n_condition) # max multiplexing
+
+        C_list = []
+
+        if maxm == 1:
+            # all is one
+            where_c = torch.where(X_condition!= 0)[1]
+            control_index = torch.full_like(where_c, self.control_token)
+            merge = torch.stack([where_c, control_index]).T
+            C_list = self.embedder(merge)
+        else:
+            for i in range(n_condition.shape[0]):
+                where_c = torch.where(X_condition[i])[0]
+
+                if n_condition[i] != maxm:
+                    to_pad = maxm - n_condition[i]
+                    control_index = torch.full((to_pad,), self.control_token)
+                    merge_i = torch.cat([where_c, control_index])
+                    C_i = self.embedder(merge_i)
+                    C_list.append(C_i)
+            C_list = torch.stack(C_list)
+        return C_list
+
+    def interact(self, z_x, C_i):
+        """latent interaction function
+
+        Args:
+            z_x (torch.Tensor): the expression represenation, output of self.encoder
+            C_i (torch.Tensor): the Vector of condition single-ton embeddings
+
+        Returns:
+            tuple of Tensor: 
+            z : join embeddings, [batch size, exp-rep dim + cond-emb dim]
+            z_c : the merged condition embeddings, [batch size, cond-emb dim]
+        """
+        key_x = self.zx_project(z_x)
+
+        # compute attention
+        # prod = torch.einsum("bi, bci->bc", key_x, C_i)
+        attention = torch.softmax(prod, dim=1)
+        # z_c = torch.einsum("bci, bc->bi", C_i, attention)
+
+        z = torch.cat([z_x , z_c], axis=1)
+        return z, z_c, attention
+        
+    def encode(self, X):
+        X_gene, X_condition = torch.tensor_split(X, (self.gene_dim,), dim=1)
+        
+        Z_x = self.encoder(X_gene)
+        key_x = self.zx_project(z_x)
+        C_i = self.process_conditions(X_condition)
+
+        z, z_c, attention = self.interact(Z_x, C_i)
+        return z, z_c, attention
+
+    def forward(self, X):
+        z, z_c, attention = self.encode(X)
+        return self.decoder(z)
     
 
 class Pretrained_GenDiff(base):

@@ -799,3 +799,33 @@ def get_cell_transitions(
     if backward:
         X = np.flip(X, axis=-1)
     return X
+
+def rank_TF_by_absortion_p(adata, condition_col='TF', member_col="member_7-1_absorption", n_condition = 15,condition_count_cutoff=20):
+
+    # compute TF exposure
+    TF, counts = np.unique(adata.obs[condition_col].values, return_counts=True)
+    proportion = counts/adata.shape[0]
+    TF_exposure_lookup = dict(zip(TF,counts))
+
+    # compute mean and median
+    abs_df = adata.obs.copy()
+    sumdf= abs_df.groupby(condition_col).agg({member_col:["mean",'median']})
+    sumdf.columns = ['mean', 'median']
+    sumdf['mean_median'] = sumdf[['mean', 'median']].sum(axis=1)
+    # 
+    sumdf = sumdf.sort_values('mean_median',ascending=False)
+    sumdf['condition_counts'] = [TF_exposure_lookup[TF] for TF in sumdf.index]
+    # abs_mean_map = sumdf.to_dict()['mean']
+    abs_median_map = sumdf.to_dict()['median']
+    abs_map = sumdf.to_dict()['mean_median']
+
+    # absortion
+    abs_df['abs_mean_median'] = abs_df[condition_col].map(abs_map)
+    # abs_df['abs_median'] = abs_df[condition_col].map(abs_median_map)
+    abs_df = abs_df.sort_values(by='abs_mean_median', ascending=False)
+
+    # select
+    TFs = list(sumdf.query("`condition_counts` > @condition_count_cutoff").index)[:n_condition]
+    # sort TFs
+
+    return TFs
