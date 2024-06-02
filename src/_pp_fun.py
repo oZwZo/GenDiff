@@ -1,12 +1,10 @@
 import os
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-os.chdir('../')
-import warnings
 import scanpy as sc
 import pandas as pd
 import numpy as np
 
 from matplotlib import pyplot as plt
+from scipy.sparse.csgraph import dijkstra
 from sklearn.model_selection import train_test_split
 
 def token_labels():
@@ -32,3 +30,22 @@ def random_split(adata):
     adata.obs.loc[train ,'split'] = 'train'
     adata.obs.loc[val ,'split'] = 'val'
     adata.obs.loc[test ,'split'] = 'test'
+    
+    
+    
+def infer_knn_depth(adata, distance = 'KNN_distances'):
+
+    k = adata.uns['neighbors']['params']['n_neighbors']
+    sc.pp.neighbors(adata, n_neighbors=k, knn=True, key_added="KNN")
+
+    degree = dijkstra(adata.obsp['KNN_distances'], indices=adata.uns['iroot'],
+                unweighted=True, limit=1000,
+                return_predecessors=False)
+
+    n_max = degree[~np.isinf(degree)].max()
+    print('unreachable points (cells)', np.isinf(degree).sum())
+    print('max degree', n_max)
+
+    imputed_degree = np.where(np.isinf(degree), n_max+1, degree)
+
+    adata.obs['Depth_from_root'] = imputed_degree

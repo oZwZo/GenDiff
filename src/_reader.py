@@ -81,6 +81,7 @@ class AnnDataSet(Dataset):
         self.X = self._to_dense(self.X)
         
         self.X = torch.from_numpy(self.X).float()
+        
     
     def __len__(self):
         return self.adata.shape[0]
@@ -96,7 +97,26 @@ class AnnDataSet(Dataset):
     
     def __getitem__(self, index):
         return self.X[index]
-
+    
+    def get_root_cell(self, root_cell):
+        """
+        from the given cell index, trace the control cell expression.
+        """
+        if root_cell is None:
+            self.iroot = self.adata_raw.uns['iroot']
+            self.root_x = self.adata_raw.X[self.iroot]
+        elif type(root_cell) == str:
+            self.iroot = np.where(self.adata_raw.obs_names == root_cell)[0]
+            self.root_x = self.adata_raw.X[self.iroot]
+        elif type(root_cell) == int:
+            self.iroot = root_cell
+            self.root_x = self.adata_raw.X[self.iroot]
+        elif type(root_cell) == np.ndarray():
+            self.iroot = None
+            self.root_x = root_cell
+        else:
+            raise ValueError("Undefined Data Type")
+    
 #    ___                   _   _   _     _                  ___    ___ 
 #   / __|  ___   _ _    __| | (_) | |_  (_)  ___   _ _     |   \  / __|
 #  | (__  / _ \ | ' \  / _` | | | |  _| | | / _ \ | ' \    | |) | \__ \
@@ -205,6 +225,34 @@ class Condition_AnnDataSet(AnnDataSet):
             batch_idx=[]
 
         return exp_mat, batch_idx, condition_idx, [], [] # noise and t is empty
+    
+class Dummy_condition_AnnDataSet(Condition_AnnDataSet):
+    def __init__(self, 
+            AnnData : AnnData, 
+            label_key: str,
+            unique_token_dict : Union[dict, str],
+            input_rep = None,
+            pseudotime_key : str = 'dpt_pseudotime',
+            condition_key : str = 'condition',
+            max_multiplexing : int = 2,
+            use_batch_index : bool = False,
+            exp_batch_key : str = 'batch', 
+            delimiter : str = "+",
+            layers:str ='counts', 
+            split_key:str = 'split', 
+            which_set: str ='train'):
+        super().__init__(AnnData, unique_token_dict, condition_key,max_multiplexing, 
+                            use_batch_index, exp_batch_key, delimiter, layers, split_key, which_set)
+        
+        self.n_token = np.max(list(self.unique_token_dict.values())) + 1
+    
+    def __getitem__(self, i):
+        exp_mat, batch_idx, condition_idx, deltaX, t = super().__getitem__(i)
+
+        c_onehot = np.zeros((self.n_token))
+        for c in condition_idx:
+            c_onehot[c] = 1
+        return exp_mat, batch_idx, c_onehot, deltaX, t
 
 class Supervised_AnnDataSet(Condition_AnnDataSet):
     def __init__(self, 
@@ -287,34 +335,6 @@ class Supervised_AnnDataSet(Condition_AnnDataSet):
 
         return exp_mat, batch_idx, condition_idx, deltaX, t
 
-
-class Dummy_condition_AnnDataSet(Condition_AnnDataSet):
-    def __init__(self, 
-            AnnData : AnnData, 
-            label_key: str,
-            unique_token_dict : Union[dict, str],
-            input_rep = None,
-            pseudotime_key : str = 'dpt_pseudotime',
-            condition_key : str = 'condition',
-            max_multiplexing : int = 2,
-            use_batch_index : bool = False,
-            exp_batch_key : str = 'batch', 
-            delimiter : str = "+",
-            layers:str ='counts', 
-            split_key:str = 'split', 
-            which_set: str ='train'):
-        super().__init__(AnnData, unique_token_dict, condition_key,max_multiplexing, 
-                            use_batch_index, exp_batch_key, delimiter, layers, split_key, which_set)
-        
-        self.n_token = np.max(list(self.unique_token_dict.values())) + 1
-    
-    def __getitem__(self, i):
-        exp_mat, batch_idx, condition_idx, deltaX, t = super().__getitem__(i)
-
-        c_onehot = np.zeros((self.n_token))
-        for c in condition_idx:
-            c_onehot[c] = 1
-        return exp_mat, batch_idx, c_onehot, deltaX, t
 
 
 class Traverse_Dataset(Condition_AnnDataSet):
@@ -782,7 +802,7 @@ class Path_Diffuse(Diffuse_Dataset):
 
     def _neighbor_path(self, i, c_i, t_i):
         """
-        The sampling process given cell i, we choose the other cell to construct a training pair.
+        The sampling process : given cell i, we choose the cell of the next timepoint to construct a training pair.
         Here we define each cell can only belongs to six different scenario:
             - around_root
             - Orphan condition
@@ -949,25 +969,6 @@ class Root_Diffuse(Diffuse_Dataset):
 
         self.Degree = self.adata.obs['Depth_from_root'].values
 
-    def get_root_cell(self, root_cell):
-        """
-        from the given cell index, trace the control cell expression.
-        """
-        if root_cell is None:
-            self.iroot = self.adata_raw.uns['iroot']
-            self.root_x = self.adata_raw.X[self.iroot]
-        elif type(root_cell) == str:
-            self.iroot = np.where(self.adata_raw.obs_names == root_cell)[0]
-            self.root_x = self.adata_raw.X[self.iroot]
-        elif type(root_cell) == int:
-            self.iroot = root_cell
-            self.root_x = self.adata_raw.X[self.iroot]
-        elif type(root_cell) == np.ndarray():
-            self.iroot = None
-            self.root_x = root_cell
-        else:
-            raise ValueError("Undefined Data Type")
-    
     
     def __getitem__(self, i):
         """
