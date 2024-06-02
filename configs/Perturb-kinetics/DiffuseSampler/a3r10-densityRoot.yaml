@@ -4,7 +4,7 @@
 
 # High level params
 epsilon_class: Epsilon_Linear
-anndata_path: /home/wergillius/Project/diffuse_differentiate/data/Perturb_sci/d_preprocessed_Apr11.h5ad
+anndata_path: /home/wergillius/Project/diffuse_differentiate/data/Perturb_sci/bydensity_Apr16.h5ad
 sampler_class: Equivalent_Diffuse_Sampler
 lr: 0.00001
 pretrain_embedder_pth: null
