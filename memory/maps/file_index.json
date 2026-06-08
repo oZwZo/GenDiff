@@ -1,0 +1,1495 @@
+{
+  "generated_at": "2026-06-08T15:29:31.553321+00:00",
+  "project": {
+    "name": null,
+    "description": null,
+    "version": null,
+    "scripts": {}
+  },
+  "entry_points": [],
+  "languages": {
+    "Python": 38
+  },
+  "directories": {
+    ".claude": {
+      "role": "\u2014",
+      "file_count": 1
+    },
+    ".": {
+      "role": "\u2014",
+      "file_count": 3
+    },
+    "configs/Barcodelet": {
+      "role": "\u2014",
+      "file_count": 4
+    },
+    "configs/Collide-seq/afmos_Traversal": {
+      "role": "\u2014",
+      "file_count": 1
+    },
+    "configs/GSM_eps_linear": {
+      "role": "\u2014",
+      "file_count": 1
+    },
+    "configs/ODE_learner": {
+      "role": "\u2014",
+      "file_count": 7
+    },
+    "configs/Perturb-kinetics/DiffuseSampler/.ipynb_checkpoints": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "configs/Perturb-kinetics/DiffuseSampler": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "configs/Perturb-kinetics/PathSampler/.ipynb_checkpoints": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "configs/Perturb-kinetics/PathSampler": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "configs/TF_atlas/TF_diff": {
+      "role": "\u2014",
+      "file_count": 12
+    },
+    "configs/TF_atlas/TF_diff-filter_PathSampler": {
+      "role": "\u2014",
+      "file_count": 3
+    },
+    "configs/TF_atlas/TF_diff_PathSampler": {
+      "role": "\u2014",
+      "file_count": 11
+    },
+    "configs/TF_atlas/TF_diff_RootSampler": {
+      "role": "\u2014",
+      "file_count": 4
+    },
+    "configs/TF_atlas/TF_diff_TravSampler": {
+      "role": "\u2014",
+      "file_count": 1
+    },
+    "configs/TF_atlas/TF_diff_filter": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "configs/TF_atlas/TF_subs/.ipynb_checkpoints": {
+      "role": "\u2014",
+      "file_count": 1
+    },
+    "configs/TF_atlas/TF_subs": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "configs/TF_atlas_AE/TF_diff_PathSampler": {
+      "role": "\u2014",
+      "file_count": 7
+    },
+    "configs/TF_atlas_AE/TF_diff_RootSampler": {
+      "role": "\u2014",
+      "file_count": 4
+    },
+    "configs/TF_atlas_AE/TF_diff_filter": {
+      "role": "\u2014",
+      "file_count": 3
+    },
+    "configs/TF_atlas_AE/TF_diff_filter_PathSampler": {
+      "role": "\u2014",
+      "file_count": 4
+    },
+    "configs/TF_atlas_Dummy_condition": {
+      "role": "\u2014",
+      "file_count": 3
+    },
+    "configs/TF_atlas_Supervised": {
+      "role": "\u2014",
+      "file_count": 9
+    },
+    "configs": {
+      "role": "Configuration",
+      "file_count": 1
+    },
+    "script": {
+      "role": "Scripts / tooling",
+      "file_count": 17
+    },
+    "some_tutorials/.ipynb_checkpoints": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "some_tutorials/Barcodelet": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "some_tutorials/Cao_Fetal_ref": {
+      "role": "\u2014",
+      "file_count": 1
+    },
+    "some_tutorials/DDPM_tutorial": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "some_tutorials/Perturb_sci": {
+      "role": "\u2014",
+      "file_count": 3
+    },
+    "some_tutorials/TF-atlas": {
+      "role": "\u2014",
+      "file_count": 4
+    },
+    "some_tutorials/TF-atlas/quick_train": {
+      "role": "\u2014",
+      "file_count": 7
+    },
+    "some_tutorials/test_notebook/.ipynb_checkpoints": {
+      "role": "\u2014",
+      "file_count": 1
+    },
+    "some_tutorials/test_notebook": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "src/.ipynb_checkpoints": {
+      "role": "\u2014",
+      "file_count": 2
+    },
+    "src": {
+      "role": "\u2014",
+      "file_count": 14
+    },
+    "validation/.ipynb_checkpoints": {
+      "role": "\u2014",
+      "file_count": 1
+    },
+    "validation": {
+      "role": "\u2014",
+      "file_count": 1
+    }
+  },
+  "files": {
+    "script/KNN_transfer_label.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "sys",
+        "os",
+        "scanpy",
+        "time",
+        "sklearn.neighbors",
+        "sklearn.preprocessing",
+        "joblib"
+      ]
+    },
+    "script/Old_train.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "parser = path_n_util.main_train_parser()",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "distutils.command.config",
+        "os",
+        "path_n_util",
+        "logging",
+        "torch",
+        "numpy",
+        "scanpy",
+        "torchsummary",
+        "torch.utils.data",
+        "functools",
+        "src"
+      ]
+    },
+    "script/RF_transfer_label.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "sys",
+        "os",
+        "scanpy",
+        "time",
+        "sklearn.ensemble",
+        "sklearn.preprocessing",
+        "joblib"
+      ]
+    },
+    "script/TFA2h5ad.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "%%",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "gzip",
+        "csv",
+        "scipy.sparse",
+        "numpy",
+        "scanpy",
+        "anndata",
+        "argparse"
+      ]
+    },
+    "script/TF_atlas_raw.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "warnings",
+        "scanpy",
+        "pandas",
+        "numpy",
+        "matplotlib",
+        "scipy.sparse",
+        "anndata",
+        "sklearn.model_selection"
+      ]
+    },
+    "script/chatgpt_cvae.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "",
+      "classes": [
+        {
+          "name": "ConditionedDataset",
+          "methods": [
+            "__init__",
+            "__getitem__",
+            "__len__"
+          ]
+        },
+        {
+          "name": "VAE",
+          "methods": [
+            "__init__",
+            "encode",
+            "reparameterize",
+            "decode",
+            "forward"
+          ]
+        }
+      ],
+      "functions": [
+        "generate_samples"
+      ],
+      "imports": [
+        "scanpy",
+        "numpy",
+        "pandas",
+        "torch",
+        "torch.utils.data"
+      ]
+    },
+    "script/convert_large_csv_mtx.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "pandas",
+        "dask.dataframe",
+        "scipy",
+        "scipy.sparse"
+      ]
+    },
+    "script/h5ad_to_10xraw.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "",
+      "classes": [],
+      "functions": [
+        "convert_fn"
+      ],
+      "imports": [
+        "os",
+        "sys",
+        "argparse",
+        "numpy",
+        "pandas",
+        "scanpy",
+        "scipy"
+      ]
+    },
+    "script/loom_ndarray.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "dask.array",
+        "loompy",
+        "numpy",
+        "pandas",
+        "scanpy"
+      ]
+    },
+    "script/main_train_with_PL_trainer.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "if __name__ == '__main__':",
+      "classes": [],
+      "functions": [
+        "dl_from_config",
+        "get_model_from_config",
+        "get_sampler_from_configs"
+      ],
+      "imports": [
+        "os",
+        "path_n_util",
+        "scanpy",
+        "numpy",
+        "torch",
+        "pytorch_lightning",
+        "torch.utils.data",
+        "torch.utils.data.dataloader",
+        "functools",
+        "src"
+      ]
+    },
+    "script/path_n_util.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "file_path = os.path.abspath(__file__)",
+      "classes": [],
+      "functions": [
+        "main_train_parser"
+      ],
+      "imports": [
+        "os",
+        "sys",
+        "json",
+        "argparse"
+      ]
+    },
+    "script/perturb.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "%load_ext autoreload",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "path_n_util",
+        "time",
+        "argparse",
+        "numpy",
+        "pandas",
+        "scanpy",
+        "scvelo",
+        "anndata",
+        "src",
+        "torch",
+        "matplotlib",
+        "matplotlib.gridspec",
+        "torch.utils.data",
+        "matplotlib.backends.backend_pdf"
+      ]
+    },
+    "script/read_loom.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "dask.array",
+        "loompy",
+        "numpy",
+        "pandas",
+        "scanpy"
+      ]
+    },
+    "script/sample_delta_x.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "if __name__ == '__main__':",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "path_n_util",
+        "src",
+        "time",
+        "numpy",
+        "tqdm",
+        "scanpy",
+        "scvelo",
+        "scipy.sparse.csgraph"
+      ]
+    },
+    "script/visualize_velocity_perturb.py": {
+      "language": "Python",
+      "module": "script",
+      "role": "Scripts / tooling",
+      "comment": "%load_ext autoreload",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "path_n_util",
+        "time",
+        "argparse",
+        "numpy",
+        "pandas",
+        "scanpy",
+        "scvelo",
+        "anndata",
+        "src",
+        "torch",
+        "matplotlib",
+        "matplotlib.gridspec",
+        "torch.utils.data",
+        "matplotlib.backends.backend_pdf"
+      ]
+    },
+    "setup.py": {
+      "language": "Python",
+      "module": "__root__",
+      "role": "\u2014",
+      "comment": "setup(",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "setuptools"
+      ]
+    },
+    "some_tutorials/TF-atlas/Harmony_integration.py": {
+      "language": "Python",
+      "module": "some_tutorials",
+      "role": "\u2014",
+      "comment": "os.chdir('../')",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "warnings",
+        "scanpy",
+        "pandas",
+        "numpy",
+        "scanpy.external"
+      ]
+    },
+    "some_tutorials/TF-atlas/common_gene_int.py": {
+      "language": "Python",
+      "module": "some_tutorials",
+      "role": "\u2014",
+      "comment": "os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "warnings",
+        "scanpy",
+        "pandas",
+        "numpy"
+      ]
+    },
+    "some_tutorials/TF-atlas/quick_train/fit_linear_each_gene.py": {
+      "language": "Python",
+      "module": "some_tutorials",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "numpy",
+        "pandas",
+        "scanpy",
+        "scipy.stats",
+        "sklearn.linear_model"
+      ]
+    },
+    "some_tutorials/TF-atlas/quick_train/quick_train_CAE.py": {
+      "language": "Python",
+      "module": "some_tutorials",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "numpy",
+        "pandas",
+        "scanpy",
+        "torch",
+        "torchmetrics",
+        "pytorch_lightning",
+        "src",
+        "torch.utils.data",
+        "importlib"
+      ]
+    },
+    "some_tutorials/TF-atlas/quick_train/quick_train_reconX.py": {
+      "language": "Python",
+      "module": "some_tutorials",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "numpy",
+        "pandas",
+        "scanpy",
+        "torch",
+        "torchmetrics",
+        "pytorch_lightning",
+        "src",
+        "torch.utils.data",
+        "importlib"
+      ]
+    },
+    "some_tutorials/test_notebook/PATH.py": {
+      "language": "Python",
+      "module": "some_tutorials",
+      "role": "\u2014",
+      "comment": "dn = os.path.dirname",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "json",
+        "argparse"
+      ]
+    },
+    "src/.ipynb_checkpoints/_sampler-checkpoint.py": {
+      "language": "Python",
+      "module": ".ipynb_checkpoints",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "DiffusionSampler_base",
+          "methods": [
+            "__init__",
+            "_compute_alphas",
+            "extract",
+            "q_sample",
+            "p_sample",
+            "p_sample_loop",
+            "sample",
+            "get_eps"
+          ]
+        },
+        {
+          "name": "DDPM_Sampler",
+          "methods": [
+            "__init__",
+            "q_sample",
+            "p_sample",
+            "p_loss"
+          ]
+        },
+        {
+          "name": "DDIM_Sampler",
+          "methods": [
+            "__init__",
+            "_get_discrete_time",
+            "_compute_ddim_alphas",
+            "q_sample",
+            "p_sample",
+            "p_loss"
+          ]
+        }
+      ],
+      "functions": [
+        "linear_beta_schedule",
+        "quadratic_beta_schedule",
+        "sigmoid_beta_schedule",
+        "cosine_beta_schedule"
+      ],
+      "imports": [
+        "os",
+        "sys",
+        "math",
+        "numpy",
+        "torch",
+        "torch.nn.modules",
+        "torch.nn.functional",
+        "turtle",
+        "typing",
+        "einops",
+        "collections",
+        "tqdm"
+      ]
+    },
+    "src/.ipynb_checkpoints/my_VAE-checkpoint.py": {
+      "language": "Python",
+      "module": ".ipynb_checkpoints",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "my_VAE",
+          "methods": [
+            "__init__",
+            "_get_inference_input",
+            "inference",
+            "_get_generative_input",
+            "generative",
+            "loss"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "cpa",
+        "scanpy",
+        "torch",
+        "torch.distributions",
+        "scvi",
+        "scvi.module.base"
+      ]
+    },
+    "src/PATH.py": {
+      "language": "Python",
+      "module": "PATH.py",
+      "role": "\u2014",
+      "comment": "dn = os.path.dirname",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "json",
+        "argparse"
+      ]
+    },
+    "src/__init__.py": {
+      "language": "Python",
+      "module": "__init__.py",
+      "role": "\u2014",
+      "comment": "dn = os.path.dirname",
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "json",
+        "argparse"
+      ]
+    },
+    "src/_configure.py": {
+      "language": "Python",
+      "module": "_configure.py",
+      "role": "\u2014",
+      "comment": "class Yaml_configurer(object):",
+      "classes": [
+        {
+          "name": "Yaml_configurer",
+          "methods": [
+            "__init__",
+            "store_attr",
+            "dataset_kwargs",
+            "epsilon_kwargs",
+            "sampler_kwargs"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "yaml"
+      ]
+    },
+    "src/_diffplot.py": {
+      "language": "Python",
+      "module": "_diffplot.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [],
+      "functions": [
+        "get_ckpt_path",
+        "plot_representation",
+        "perturbation",
+        "sample_Delta_X",
+        "reload_sampler",
+        "compute_velocity",
+        "extrapolate",
+        "condition_on_umap",
+        "Xmat_by_time",
+        "get_dataloader",
+        "get_annDataLoader",
+        "diffuse_cell",
+        "triple_plot",
+        "merge_with_control",
+        "plot_transit_cells",
+        "get_cell_transitions",
+        "rank_TF_by_absortion_p"
+      ],
+      "imports": [
+        "os",
+        "sys",
+        "numpy",
+        "pandas",
+        "torch",
+        "functools",
+        "torch.utils.data",
+        "scanpy",
+        "src",
+        "scvelo",
+        "tqdm",
+        "anndata",
+        "seaborn",
+        "matplotlib",
+        "matplotlib.colors",
+        "script.main_train_with_PL_trainer"
+      ]
+    },
+    "src/_epsilon_module.py": {
+      "language": "Python",
+      "module": "_epsilon_module.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "Epsilon_base",
+          "methods": [
+            "__init__",
+            "_get_model_input",
+            "get_DeltaX",
+            "forward"
+          ]
+        },
+        {
+          "name": "Epsilon_Linear",
+          "methods": [
+            "__init__",
+            "define_block",
+            "encode",
+            "forward",
+            "get_DeltaX"
+          ]
+        },
+        {
+          "name": "Epsilon_Categorical",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "Epsilon_AttnCondition",
+          "methods": [
+            "__init__",
+            "condition_attention",
+            "encode",
+            "forward"
+          ]
+        },
+        {
+          "name": "Epsilon_CAE",
+          "methods": [
+            "__init__",
+            "encode",
+            "get_DeltaX",
+            "forward",
+            "compute_loss"
+          ]
+        },
+        {
+          "name": "GuassianNLL_CAE",
+          "methods": [
+            "__init__",
+            "forward",
+            "compute_loss"
+          ]
+        },
+        {
+          "name": "Epsilon_CVAE",
+          "methods": [
+            "__init__",
+            "reparameterize",
+            "encode",
+            "forward",
+            "compute_loss"
+          ]
+        },
+        {
+          "name": "Epsilon_VAE",
+          "methods": [
+            "__init__",
+            "encode"
+          ]
+        },
+        {
+          "name": "Epsilon_CVAE_adv",
+          "methods": [
+            "__init__"
+          ]
+        },
+        {
+          "name": "Epsilon_Linear_token_net",
+          "methods": [
+            "__init__"
+          ]
+        },
+        {
+          "name": "ODE_eps",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "ODE_eps_notime",
+          "methods": [
+            "__init__",
+            "_get_model_input"
+          ]
+        },
+        {
+          "name": "Epsilon_LinearAttn",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "json",
+        "os",
+        "sys",
+        "math",
+        "numpy",
+        "torch",
+        "torch.distributions",
+        "turtle",
+        "typing",
+        "einops",
+        "collections",
+        "_helper_net",
+        "warnings"
+      ]
+    },
+    "src/_epsilon_module_old.py": {
+      "language": "Python",
+      "module": "_epsilon_module_old.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "Epsilon_base",
+          "methods": [
+            "__init__",
+            "_get_model_input",
+            "forward"
+          ]
+        },
+        {
+          "name": "Epsilon_Linear",
+          "methods": [
+            "__init__",
+            "encode",
+            "forward"
+          ]
+        },
+        {
+          "name": "Epsilon_AttnCondition",
+          "methods": [
+            "__init__",
+            "define_block",
+            "condition_attention",
+            "encode",
+            "forward"
+          ]
+        },
+        {
+          "name": "Epsilon_CVAE",
+          "methods": [
+            "__init__",
+            "reparameterize",
+            "encode",
+            "forward"
+          ]
+        },
+        {
+          "name": "Epsilon_Linear_token_net",
+          "methods": [
+            "__init__"
+          ]
+        },
+        {
+          "name": "ODE_eps",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "ODE_eps_notime",
+          "methods": [
+            "__init__",
+            "_get_model_input"
+          ]
+        },
+        {
+          "name": "Epsilon_LinearAttn",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "json",
+        "os",
+        "sys",
+        "math",
+        "numpy",
+        "torch",
+        "turtle",
+        "typing",
+        "einops",
+        "collections",
+        "_helper_net",
+        "warnings"
+      ]
+    },
+    "src/_helper_net.py": {
+      "language": "Python",
+      "module": "_helper_net.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "SinoidalPositionEmbeddings",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "MLP",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "SelfAttention",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "LinearAttention",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "Residual",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "ResnetBlock",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "math",
+        "turtle",
+        "typing",
+        "einops",
+        "numpy",
+        "torch",
+        "torch.nn.modules",
+        "collections",
+        "warnings"
+      ]
+    },
+    "src/_learner.py": {
+      "language": "Python",
+      "module": "_learner.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "AE_learner",
+          "methods": [
+            "__init__",
+            "configure_optimizers",
+            "forward",
+            "training_step",
+            "validation_step",
+            "test_step"
+          ]
+        },
+        {
+          "name": "DiffusionSampler_base",
+          "methods": [
+            "__init__",
+            "_compute_alphas",
+            "extract",
+            "configure_optimizers",
+            "q_sample",
+            "q_sample_loop",
+            "p_sample",
+            "p_sample_loop",
+            "evaluation_loop",
+            "sample",
+            "forward",
+            "p_loss",
+            "training_step",
+            "_shared_eval_step",
+            "validation_step",
+            "test_step"
+          ]
+        },
+        {
+          "name": "DDPM_Sampler",
+          "methods": [
+            "__init__",
+            "q_sample",
+            "p_sample"
+          ]
+        },
+        {
+          "name": "DDPM_reconX",
+          "methods": [
+            "__init__",
+            "p_sample",
+            "p_loss",
+            "_shared_eval_step"
+          ]
+        },
+        {
+          "name": "Equivalent_Diffuse_Sampler",
+          "methods": [
+            "__init__",
+            "q_sample",
+            "p_sample",
+            "_shared_step",
+            "training_step"
+          ]
+        },
+        {
+          "name": "Weight_l2_sampler",
+          "methods": [
+            "__init__",
+            "configure_optimizers",
+            "training_step"
+          ]
+        },
+        {
+          "name": "ODE_learner",
+          "methods": [
+            "__init__",
+            "forward",
+            "training_step",
+            "validation_step",
+            "configure_optimizers"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "os",
+        "torch",
+        "sys",
+        "math",
+        "numpy",
+        "torch.nn.modules",
+        "torch.nn.functional",
+        "turtle",
+        "tqdm",
+        "typing",
+        "einops",
+        "collections",
+        "pytorch_lightning",
+        "torchmetrics",
+        "_sampler"
+      ]
+    },
+    "src/_linear.py": {
+      "language": "Python",
+      "module": "_linear.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "base",
+          "methods": [
+            "__init__",
+            "configure_optimizers",
+            "forward",
+            "training_step",
+            "validation_step",
+            "test_step"
+          ]
+        },
+        {
+          "name": "Linear_model",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "CAE_model",
+          "methods": [
+            "__init__",
+            "encode",
+            "forward"
+          ]
+        },
+        {
+          "name": "LatentAdd_CAE",
+          "methods": [
+            "__init__",
+            "forward"
+          ]
+        },
+        {
+          "name": "Embedding_model",
+          "methods": [
+            "__init__",
+            "encode",
+            "forward"
+          ]
+        },
+        {
+          "name": "Latent_Interaction",
+          "methods": [
+            "__init__",
+            "process_conditions",
+            "interact",
+            "encode",
+            "forward"
+          ]
+        },
+        {
+          "name": "Pretrained_GenDiff",
+          "methods": [
+            "__init__",
+            "insert_prior",
+            "configure_optimizers",
+            "encode",
+            "forward"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "numpy",
+        "pandas",
+        "scanpy",
+        "torch",
+        "torchmetrics",
+        "pytorch_lightning",
+        "src",
+        "torch.utils.data"
+      ]
+    },
+    "src/_pp_fun.py": {
+      "language": "Python",
+      "module": "_pp_fun.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [],
+      "functions": [
+        "token_labels",
+        "discrete_time",
+        "random_split",
+        "infer_knn_depth"
+      ],
+      "imports": [
+        "os",
+        "scanpy",
+        "pandas",
+        "numpy",
+        "matplotlib",
+        "scipy.sparse.csgraph",
+        "sklearn.model_selection"
+      ]
+    },
+    "src/_reader.py": {
+      "language": "Python",
+      "module": "_reader.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "AnnDataSet",
+          "methods": [
+            "__init__",
+            "__len__",
+            "detect_sparse_matrix",
+            "_to_dense",
+            "__getitem__",
+            "get_root_cell"
+          ]
+        },
+        {
+          "name": "Condition_AnnDataSet",
+          "methods": [
+            "__init__",
+            "__getitem__"
+          ]
+        },
+        {
+          "name": "Dummy_condition_AnnDataSet",
+          "methods": [
+            "__init__",
+            "__getitem__"
+          ]
+        },
+        {
+          "name": "Supervised_AnnDataSet",
+          "methods": [
+            "__init__",
+            "__getitem__"
+          ]
+        },
+        {
+          "name": "Traverse_Dataset",
+          "methods": [
+            "__init__",
+            "T",
+            "traverse_neighbor",
+            "index_subset_2_raw",
+            "subset_2_raw_index_ls",
+            "expand_neighbor",
+            "_diffuse_neighbor",
+            "__getitem__"
+          ]
+        },
+        {
+          "name": "Diffuse_Dataset",
+          "methods": [
+            "__init__",
+            "T",
+            "traverse_neighbor",
+            "_sample_by_distance",
+            "expand_neighbor",
+            "_diffuse_keepi",
+            "_diffuse_neighbor",
+            "__getitem__"
+          ]
+        },
+        {
+          "name": "Path_Diffuse",
+          "methods": [
+            "__init__",
+            "index_subset_2_raw",
+            "subset_2_raw_index_ls",
+            "_neighbor_path",
+            "__getitem__"
+          ]
+        },
+        {
+          "name": "Root_Diffuse",
+          "methods": [
+            "__init__",
+            "__getitem__"
+          ]
+        },
+        {
+          "name": "Fix_Degree_Diffuse",
+          "methods": [
+            "__init__",
+            "traverse_next_degree_neighbor",
+            "_diffuse_neighbor"
+          ]
+        },
+        {
+          "name": "ODE_dataset",
+          "methods": [
+            "__init__",
+            "T",
+            "__getitem__"
+          ]
+        }
+      ],
+      "functions": [
+        "demultiplex_token",
+        "get_embedding_index"
+      ],
+      "imports": [
+        "os",
+        "sys",
+        "torch",
+        "typing",
+        "torch.utils.data",
+        "anndata",
+        "numpy",
+        "scanpy",
+        "scipy.sparse.csgraph"
+      ]
+    },
+    "src/_sampler.py": {
+      "language": "Python",
+      "module": "_sampler.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "DiffusionSampler_base",
+          "methods": [
+            "__init__",
+            "_compute_alphas",
+            "extract",
+            "q_sample",
+            "q_sample_loop",
+            "p_sample",
+            "p_sample_loop",
+            "evaluation_loop",
+            "sample",
+            "get_eps",
+            "p_loss"
+          ]
+        },
+        {
+          "name": "DDPM_Sampler",
+          "methods": [
+            "__init__",
+            "q_sample",
+            "p_sample"
+          ]
+        },
+        {
+          "name": "DDPM_reconX",
+          "methods": [
+            "__init__",
+            "p_sample",
+            "p_loss"
+          ]
+        },
+        {
+          "name": "DDIM_Sampler",
+          "methods": [
+            "__init__",
+            "_get_discrete_time",
+            "_compute_ddim_alphas",
+            "q_sample",
+            "p_sample"
+          ]
+        }
+      ],
+      "functions": [
+        "linear_beta_schedule",
+        "quadratic_beta_schedule",
+        "sigmoid_beta_schedule",
+        "cosine_beta_schedule"
+      ],
+      "imports": [
+        "os",
+        "sys",
+        "math",
+        "numpy",
+        "torch",
+        "torch.nn.modules",
+        "torch.nn.functional",
+        "turtle",
+        "typing",
+        "einops",
+        "collections",
+        "tqdm"
+      ]
+    },
+    "src/_sc_explore_fn.py": {
+      "language": "Python",
+      "module": "_sc_explore_fn.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [],
+      "functions": [
+        "hightlightcell",
+        "rgb_formater",
+        "rgb_to_hex",
+        "TFAtlas_anno_control",
+        "find_unreachable",
+        "save_pred_sampled_deltaX",
+        "convert_adata_to_10x"
+      ],
+      "imports": [
+        "scanpy",
+        "pandas",
+        "numpy",
+        "scipy.sparse.csgraph",
+        "PATH",
+        "scipy",
+        "scipy.sparse"
+      ]
+    },
+    "src/my_VAE.py": {
+      "language": "Python",
+      "module": "my_VAE.py",
+      "role": "\u2014",
+      "comment": "",
+      "classes": [
+        {
+          "name": "my_VAE",
+          "methods": [
+            "__init__",
+            "_get_inference_input",
+            "inference",
+            "_get_generative_input",
+            "generative",
+            "loss"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "os",
+        "sys",
+        "cpa",
+        "scanpy",
+        "torch",
+        "torch.distributions",
+        "scvi",
+        "scvi.module.base"
+      ]
+    }
+  }
+}

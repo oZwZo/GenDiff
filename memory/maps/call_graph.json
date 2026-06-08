@@ -1,0 +1,319 @@
+{
+  "generated_at": "2026-06-08T15:29:31.553321+00:00",
+  "edges": [
+    {
+      "from": "script/Old_train.py",
+      "to": "script/path_n_util.py",
+      "type": "import"
+    },
+    {
+      "from": "script/Old_train.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "script/TFA2h5ad.py",
+      "to": "script/convert_large_csv_mtx.py",
+      "type": "import"
+    },
+    {
+      "from": "script/main_train_with_PL_trainer.py",
+      "to": "script/path_n_util.py",
+      "type": "import"
+    },
+    {
+      "from": "script/main_train_with_PL_trainer.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "script/perturb.py",
+      "to": "script/path_n_util.py",
+      "type": "import"
+    },
+    {
+      "from": "script/perturb.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "script/sample_delta_x.py",
+      "to": "script/path_n_util.py",
+      "type": "import"
+    },
+    {
+      "from": "script/sample_delta_x.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "script/visualize_velocity_perturb.py",
+      "to": "script/path_n_util.py",
+      "type": "import"
+    },
+    {
+      "from": "script/visualize_velocity_perturb.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "some_tutorials/TF-atlas/quick_train/quick_train_CAE.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "some_tutorials/TF-atlas/quick_train/quick_train_reconX.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "src/_diffplot.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "src/_diffplot.py",
+      "to": "script/main_train_with_PL_trainer.py",
+      "type": "import"
+    },
+    {
+      "from": "src/_epsilon_module.py",
+      "to": "src/_helper_net.py",
+      "type": "import"
+    },
+    {
+      "from": "src/_epsilon_module_old.py",
+      "to": "src/_helper_net.py",
+      "type": "import"
+    },
+    {
+      "from": "src/_learner.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "src/_linear.py",
+      "to": "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+      "type": "import"
+    },
+    {
+      "from": "src/_sc_explore_fn.py",
+      "to": "some_tutorials/test_notebook/PATH.py",
+      "type": "import"
+    }
+  ],
+  "adjacency": {
+    "script/KNN_transfer_label.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "script/Old_train.py": {
+      "imports": [
+        "script/path_n_util.py",
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": []
+    },
+    "script/path_n_util.py": {
+      "imports": [],
+      "imported_by": [
+        "script/Old_train.py",
+        "script/main_train_with_PL_trainer.py",
+        "script/perturb.py",
+        "script/sample_delta_x.py",
+        "script/visualize_velocity_perturb.py"
+      ]
+    },
+    "src/.ipynb_checkpoints/_sampler-checkpoint.py": {
+      "imports": [],
+      "imported_by": [
+        "script/Old_train.py",
+        "script/main_train_with_PL_trainer.py",
+        "script/perturb.py",
+        "script/sample_delta_x.py",
+        "script/visualize_velocity_perturb.py",
+        "some_tutorials/TF-atlas/quick_train/quick_train_CAE.py",
+        "some_tutorials/TF-atlas/quick_train/quick_train_reconX.py",
+        "src/_diffplot.py",
+        "src/_learner.py",
+        "src/_linear.py"
+      ]
+    },
+    "script/RF_transfer_label.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "script/TFA2h5ad.py": {
+      "imports": [
+        "script/convert_large_csv_mtx.py"
+      ],
+      "imported_by": []
+    },
+    "script/convert_large_csv_mtx.py": {
+      "imports": [],
+      "imported_by": [
+        "script/TFA2h5ad.py"
+      ]
+    },
+    "script/TF_atlas_raw.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "script/chatgpt_cvae.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "script/h5ad_to_10xraw.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "script/loom_ndarray.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "script/main_train_with_PL_trainer.py": {
+      "imports": [
+        "script/path_n_util.py",
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": [
+        "src/_diffplot.py"
+      ]
+    },
+    "script/perturb.py": {
+      "imports": [
+        "script/path_n_util.py",
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": []
+    },
+    "script/read_loom.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "script/sample_delta_x.py": {
+      "imports": [
+        "script/path_n_util.py",
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": []
+    },
+    "script/visualize_velocity_perturb.py": {
+      "imports": [
+        "script/path_n_util.py",
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": []
+    },
+    "setup.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "some_tutorials/TF-atlas/Harmony_integration.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "some_tutorials/TF-atlas/common_gene_int.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "some_tutorials/TF-atlas/quick_train/fit_linear_each_gene.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "some_tutorials/TF-atlas/quick_train/quick_train_CAE.py": {
+      "imports": [
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": []
+    },
+    "some_tutorials/TF-atlas/quick_train/quick_train_reconX.py": {
+      "imports": [
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": []
+    },
+    "some_tutorials/test_notebook/PATH.py": {
+      "imports": [],
+      "imported_by": [
+        "src/_sc_explore_fn.py"
+      ]
+    },
+    "src/.ipynb_checkpoints/my_VAE-checkpoint.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "src/PATH.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "src/__init__.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "src/_configure.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "src/_diffplot.py": {
+      "imports": [
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py",
+        "script/main_train_with_PL_trainer.py"
+      ],
+      "imported_by": []
+    },
+    "src/_epsilon_module.py": {
+      "imports": [
+        "src/_helper_net.py"
+      ],
+      "imported_by": []
+    },
+    "src/_helper_net.py": {
+      "imports": [],
+      "imported_by": [
+        "src/_epsilon_module.py",
+        "src/_epsilon_module_old.py"
+      ]
+    },
+    "src/_epsilon_module_old.py": {
+      "imports": [
+        "src/_helper_net.py"
+      ],
+      "imported_by": []
+    },
+    "src/_learner.py": {
+      "imports": [
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": []
+    },
+    "src/_linear.py": {
+      "imports": [
+        "src/.ipynb_checkpoints/_sampler-checkpoint.py"
+      ],
+      "imported_by": []
+    },
+    "src/_pp_fun.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "src/_reader.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "src/_sampler.py": {
+      "imports": [],
+      "imported_by": []
+    },
+    "src/_sc_explore_fn.py": {
+      "imports": [
+        "some_tutorials/test_notebook/PATH.py"
+      ],
+      "imported_by": []
+    },
+    "src/my_VAE.py": {
+      "imports": [],
+      "imported_by": []
+    }
+  }
+}
