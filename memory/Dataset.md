@@ -18,6 +18,18 @@ Four `.h5ad` (AnnData) files, ~12.5 GB total. Two correspond to the manuscript's
 - 28,825 cells × **4,806 genes** — matches `gene_dim: 4806` in the TF-Atlas configs and the manuscript's "4806 genes".
 - `obs`: `TF` (2,535 distinct TF-ORF tokens incl. `ctrl`/GFP), `batch` (0/1), `louvain` (25, incl. `7-1`,`8-0`…), `dpt_pseudotime`, **`discrete_time`** (0–200), **`split`** (train/test/val), `course_louvain` (18), **`course_cell_type`** (17: stromal_1-5, endoderm_1-2, fibroblast_1-3, ectoderm_2-3, …), `Cluster Enriched TFs`, `is_large`, `velocity_self_transition`.
 - `layers`: `X`, **`velocity`** (= GenDiff-predicted ΔX used as the velocity matrix for scVelo/CellRank).
+- ⚠ **Manuscript training target `a3_PathSampled_X` is NOT in this local file** (its only layers are
+  `X`, `velocity`). The quick_train scripts/notebooks read `adata.layers['a3_PathSampled_X']` from the
+  old-machine file `…/data/TFAtlas/GSE217460_210322_TFAtlas_differentiated.h5ad` — which is **absent
+  here** (no `data/TFAtlas/` dir). Provenance of that layer: it is the **supervised ΔX target**, a
+  per-cell `delta_X = X_next − X` emitted by the GenDiff **path sampler** (`Path_Diffuse` in
+  `src/_reader.py` — the "Path"; `alpha=3` → the "a3" prefix; an `a2_`/α=2 variant also existed),
+  collected and averaged over `repeat` samplings by `src/_diffplot.sample_Delta_X`. It is **not a model
+  output** — it is the ground truth that GenDiff and the Ridge/CAE baselines are all trained/scored
+  against. No code in this repo writes the key (cf. `_sc_explore_fn.save_pred_sampled_deltaX`, which
+  writes a hand-named `obsm[key]`); it was baked into the saved h5ad, so retraining requires
+  regenerating it with the path sampler. (BarRNA-seq's analogue is `obsm['Tr_SampledX_r100']` =
+  traverse sampler, repeat 100 — see below.)
 - `obsm`: `X_pca`, `X_pca_harmony`, `X_umap`, `X_diffmap`, `velocity_umap`. `obsp`: `connectivities`, `distances`.
 - `uns`: **`iroot` = 28820**, **`unique_token_dict`** (3,369 entries, token→index, index 0 = control), `neighbors`, `velocity_graph`(+neg), `rank_genes_groups`.
 - → Used by `Diffuse_Dataset` / `Path_Diffuse` / `Root_Diffuse` (condition_key `TF`, layers `X`, pseudotime `discrete_time`). This is the file behind Figs 4–6.
@@ -49,3 +61,9 @@ Trainable files satisfy the loader contract: `obs[condition_key]`, `obs['discret
 - **Token/embedding sizes:** `unique_token_dict` here has 3,369 entries; configs set `n_base_perturbs: 3551` (embedding-table size, ≥ tokens); only 2,535 TFs are actually observed among differentiated cells. All three numbers are internally consistent (table ≥ dict ≥ observed) but worth stating precisely.
 - **Config paths are stale:** configs point `anndata_path` at `/home/wergillius/Project/diffuse_differentiate/data/...`. To train here, repoint `anndata_path` to these `data/` files (e.g. `differentiated_model_velo.h5ad` for TF-Atlas, `integrated_mesc_group0_Nov7.h5ad` for BarRNA-seq).
 - **scVelo benchmark (R2.1):** spliced/unspliced layers exist **only** in `210717_TFAtlas1M2_diffed.h5ad`; the BarRNA-seq files have no spliced/unspliced, so a fair scVelo comparison there is not possible without re-quantification.
+- **Manuscript TF-Atlas target layer missing:** `a3_PathSampled_X` (the supervised ΔX target, see the
+  `differentiated_model_velo.h5ad` detail above) is **not present** in any local h5ad and the
+  notebooks' source file `data/TFAtlas/GSE217460_210322_TFAtlas_differentiated.h5ad` does not exist
+  here — regenerate it with the GenDiff path sampler (`Path_Diffuse` → `sample_Delta_X`) before
+  retraining/reproducing Figs 4–6. (BarRNA-seq's target `obsm['Tr_SampledX_r100']` **is** present in
+  `integrated_mesc_group0_Nov7.h5ad`.)
