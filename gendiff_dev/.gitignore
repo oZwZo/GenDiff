@@ -1,0 +1,6 @@
+# Generated target artifacts: large, regenerable from their manifests — keep manifests + runs table.
+results/targets/*.npy
+__pycache__/
+*.pyc
+.cache/
+.tfcache/

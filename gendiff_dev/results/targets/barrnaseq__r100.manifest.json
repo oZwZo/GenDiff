@@ -1,0 +1,14 @@
+{
+  "dataset": "barrnaseq",
+  "name": "r100",
+  "params": {
+    "builder": "from_obsm",
+    "key": "Tr_SampledX_r100"
+  },
+  "n_obs": 5745,
+  "n_genes": 2000,
+  "source_path": "/rds/user/wz369/hpc-work/GenDiff/data/integrated_mesc_group0_Nov7.h5ad",
+  "source_hash": "24c18baf78b9",
+  "created": "2026-06-10 23:10:32",
+  "revcorr": -0.7886
+}
