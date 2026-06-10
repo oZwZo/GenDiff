@@ -22,8 +22,10 @@ class base(pl.LightningModule):
 
         self.loss_fn = nn.MSELoss()
 
-        self.train_r2_score = torchmetrics.R2Score(num_outputs = output_dim)
-        self.val_r2_score = torchmetrics.R2Score(num_outputs = output_dim)
+        # torchmetrics>=1.x: R2Score infers num_outputs from data; the old `num_outputs=` kwarg
+        # is rejected (ValueError) on torchmetrics 1.7.1 in this env. Keep multioutput scalar.
+        self.train_r2_score = torchmetrics.R2Score()
+        self.val_r2_score = torchmetrics.R2Score()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

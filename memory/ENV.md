@@ -1,7 +1,8 @@
 # Environment: GenDiff
 > Generated: 2026-06-08 | Updated: 2026-06-08 (added GenDiff_env clone; added the manuscript
 > "quick_train" reproduction path — the paper's TF-Atlas figures come from there, not from the training
-> script). Verified by import + forward-pass test. Part of: [codebase.md](codebase.md)
+> script); 2026-06-10 (added the `cellot` and `cellflow` baseline/comparison envs — see end of file).
+> Verified by import + forward-pass test. Part of: [codebase.md](codebase.md)
 
 ## Primary environment: `GenDiff_env` (micromamba)
 A full clone of `PINN_env`, created so GenDiff has a dedicated env. GenDiff is installed in **both** envs.
@@ -136,3 +137,91 @@ see codebase.md "MANUSCRIPT MODEL" for the exact definition.
   (→ `Epsilon_Linear` + `Equivalent_Diffuse_Sampler`), then analyse via `1.sample_DeltaX.ipynb`
   (`dfp.extrapolate` / `plot_representation`, `use_rep='z_c'`). This is the one manuscript result that
   uses the training-script pipeline rather than quick_train.
+
+---
+
+# Baseline / comparison environments
+> Two extra micromamba envs in the same root (`MAMBA_ROOT_PREFIX=/rds/user/wz369/hpc-work/LIBS/mamba`),
+> built 2026-06-10 to run external perturbation-response models on the GenDiff datasets (TF-Atlas,
+> BarRNA-seq) as comparisons. Each has its own deliberately-pinned stack; do **not** install either
+> package into `GenDiff_env`/`PINN_env` (version conflicts both ways). Both verified on the cluster's
+> **A100-SXM4-80GB** (driver 595.71.05).
+
+## `cellot` (micromamba) — CellOT, neural optimal-transport baseline
+Runs [CellOT](https://github.com/bunnech/cellot) (Bunne et al.) — learns a control→one-perturbation
+transport map (one model per perturbation). PyTorch, deliberately old pins (the repo's `requirements.txt`).
+- Env path: `/rds/user/wz369/hpc-work/LIBS/mamba/envs/cellot` (~49,400 files) | Python **3.9.5**
+- Activate: `micromamba activate cellot` · one-off: `micromamba run -n cellot <cmd>`
+- Repo (installed `-e`): `/rds/user/wz369/hpc-work/cellot` (cloned, then `python setup.py develop`)
+- **Memory + harness:** [`cellot/memory/codebase.md`](../../cellot/memory/codebase.md),
+  [`cellot/memory/HARNESS.md`](../../cellot/memory/HARNESS.md) — train/evaluate tool definitions.
+
+### Key package versions
+| Package | Version | Note |
+|---------|---------|------|
+| torch | **1.11.0+cu113** | swapped from the PyPI default cu102 (see GPU gotcha) |
+| numpy | 1.19.5 | repo pin |
+| pandas | 1.2.5 | repo pin |
+| anndata / scanpy | 0.7.6 / 1.8.1 | old AnnData API |
+| scipy / scikit-learn | 1.8.1 / 1.1.1 | repo pins |
+| ml-collections | 0.1.0 | config_flags system |
+| requests | 2.32.5 | pulled in by deps |
+
+### Provenance (how it was built)
+1. `micromamba create -y -n cellot python=3.9.5 pip setuptools wheel`
+2. `pip install -r requirements.txt` (exact pins above) → `python setup.py develop`
+3. **GPU fix:** PyPI `torch==1.11.0` is a **cu102** build (arch list sm_37…sm_70) and dies on the A100
+   (sm_80) with `no kernel image is available`. Uninstalled it and installed the same version's cu113
+   build: `pip install --no-cache-dir "torch==1.11.0+cu113" -f https://download.pytorch.org/whl/torch_stable.html`
+   (arch list now includes sm_80/sm_86). Verified A100 matmul + forward/backward.
+
+### Gotchas (full list in HARNESS.md)
+- Run scripts from the **repo root** — task configs use relative data paths.
+- `data.target` is **not** in the task YAML → always pass `--config.data.target <condition>`.
+- Plain-CellOT eval needs `--embedding ""` or `evaluate.py` tries to load a sibling scGen autoencoder.
+- `cache/model.pt` only appears after the first `eval_freq` step (250); the train/test split is
+  regenerated at runtime — `obs['split']` is **ignored** (fix `datasplit.random_state` for reproducibility).
+
+## `cellflow` (micromamba) — CellFlow, JAX flow-matching model
+Runs [CellFlow](https://github.com/theislab/cellflow) (pip pkg **`cellflow-tools`**) — conditional
+OT flow-matching over perturbation conditions (JAX/flax/ott-jax/diffrax). Models many conditions in
+one model via a learned condition embedding.
+- Env path: `/rds/user/wz369/hpc-work/LIBS/mamba/envs/cellflow` (~39,000 files) | Python **3.11.15**
+- Activate: `micromamba activate cellflow` · one-off: `micromamba run -n cellflow <cmd>`
+- Repo clone (docs/tutorials): `/rds/user/wz369/hpc-work/cellflow` (the package itself is pip-installed)
+- **Memory + harness:** [`cellflow/memory/codebase.md`](../../cellflow/memory/codebase.md),
+  [`cellflow/memory/HARNESS.md`](../../cellflow/memory/HARNESS.md) — train/predict tool definitions (Python API).
+
+### Key package versions
+| Package | Version | Note |
+|---------|---------|------|
+| cellflow-tools | **0.0.9** | latest; needs Python ≥3.11 |
+| jax / jaxlib | 0.10.1 / 0.10.1 | GPU backend |
+| jax-cuda12-plugin / -pjrt | 0.10.1 | bundled CUDA 12.9 + cuDNN 9.23 |
+| ott-jax / flax / diffrax | 0.6.0 / 0.12.7 / 0.7.2 | solver stack (OTFlowMatching default) |
+| numpy / pandas | 2.4.6 / 2.3.3 | modern stack |
+| anndata / scanpy | 0.12.16 / 1.11.5 | modern AnnData API |
+| scikit-learn | 1.5.1 | pinned by cellflow |
+| requests | 2.34.2 | **manually added** (undeclared import, see gotcha) |
+
+### Provenance (how it was built)
+1. `micromamba create -y -n cellflow python=3.11 pip`
+2. `pip install --no-cache-dir cellflow-tools "jax[cuda12]"` (resolves jax+jaxlib+cuda12 plugin together)
+3. `pip install --no-cache-dir requests` — CellFlow's `preprocessing/_gene_emb.py` imports `requests`
+   unconditionally but doesn't declare it; import fails without this.
+- Verified: `jax.default_backend()=='gpu'`, `jax.devices()==[CudaDevice(id=0)]`, A100 matmul finite;
+  `cellflow.model.CellFlow` + preprocessing/training/data submodules import. (The `hwloc/numa
+  cpubind failed` lines JAX prints on this cluster are cosmetic.)
+
+### Gotchas (full list in HARNESS.md)
+- **`requests` is an undeclared runtime dep** (added above) — re-add it if the env is rebuilt.
+- `control_key` is a **boolean** obs column (`True`=control), not a string label — build it explicitly,
+  e.g. `adata.obs['is_control'] = adata.obs['condition']=='control'`.
+- Prediction AnnData must contain **only control cells** (`_verify_prediction_data` raises otherwise).
+- `ad.concat` drops `adata.uns` (which holds condition embeddings) — reassign `uns` after any concat/subset.
+- **No automatic checkpointing** — call `cf.save(<dir>)` manually after `train()`.
+
+### Eligibility note
+CellFlow requires **Python ≥3.11**, so it cannot go in `GenDiff_env`/`PINN_env` (3.9.22), `cellot`
+(3.9.5), or `mfm`/`mioflow` (3.10 — would also churn their jax/ott/sklearn). It needs its own env,
+which is this one.
