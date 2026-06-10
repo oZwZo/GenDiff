@@ -1,0 +1,3 @@
+tag,CBDir,ICCoh,rev_collin,pt_drift,pt_fwd_frac,n_macro,ARI_cond,NMI_cond,n_branches,branch_map,traj_err
+geo_m15_r3,0.8373,0.005,0.8472,0.00207,0.5579,9,0.0009,0.1044,7,"{""-1"": ""RA+Fgf"", ""2"": ""Wnt+TgfB+Fgf"", ""0"": ""RA+Wnt+Fgf"", ""5"": ""RA+ctrl"", ""6"": ""TgfB+Bmp+Fgf"", ""7"": ""RA+Wnt+Bmp"", ""1"": ""RA+Wnt+Fgf"", ""4"": ""Bmp+ctrl""}",
+minusX,0.8472,0.1824,0.8472,0.00032,0.5328,9,0.0011,0.1047,6,"{""-1"": ""RA+Fgf"", ""2"": ""Wnt+TgfB+Fgf"", ""0"": ""RA+Wnt+Fgf"", ""5"": ""RA+ctrl"", ""6"": ""ctrl"", ""7"": ""RA+Bmp"", ""1"": ""RA+Wnt+Fgf"", ""3"": ""Bmp+ctrl""}",
