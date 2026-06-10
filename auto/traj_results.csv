@@ -1,0 +1,7 @@
+tag,CBDir,ICCoh,rev_collin,pt_drift,pt_fwd_frac,n_macro,ARI_cond,NMI_cond,n_branches,branch_map,traj_err
+geo_m15_r3,0.8373,0.005,0.8472,0.00207,0.5579,9,0.0009,0.1044,7,"{""-1"": ""RA+Fgf"", ""2"": ""Wnt+TgfB+Fgf"", ""0"": ""RA+Wnt+Fgf"", ""5"": ""RA+ctrl"", ""6"": ""TgfB+Bmp+Fgf"", ""7"": ""RA+Wnt+Bmp"", ""1"": ""RA+Wnt+Fgf"", ""4"": ""Bmp+ctrl""}",
+fermat_m15_r3,0.8385,0.0106,0.8472,0.00202,0.5553,9,0.001,0.1052,6,"{""-1"": ""RA+Fgf"", ""2"": ""Wnt+TgfB+Fgf"", ""0"": ""RA+Wnt+Fgf"", ""5"": ""RA+ctrl"", ""6"": ""ctrl"", ""7"": ""RA+Wnt+Bmp"", ""1"": ""RA+Wnt+Fgf"", ""3"": ""Bmp+ctrl""}",
+old_r100,0.7202,0.1308,0.8472,0.00035,0.5335,9,0.0011,0.1045,6,"{""-1"": ""RA+Fgf"", ""2"": ""Wnt+TgfB+Fgf"", ""0"": ""RA+Wnt+Fgf"", ""5"": ""RA+ctrl"", ""6"": ""ctrl"", ""7"": ""RA+Bmp"", ""1"": ""RA+Wnt+Fgf"", ""3"": ""Bmp+ctrl""}",
+otcfm,0.4986,0.1203,0.8472,0.00097,0.5412,9,0.0007,0.1019,6,"{""-1"": ""RA+Fgf"", ""2"": ""Wnt+TgfB+Fgf"", ""0"": ""RA+Wnt+Fgf"", ""4"": ""RA+ctrl"", ""6"": ""ctrl"", ""7"": ""RA+Wnt+Bmp"", ""1"": ""RA+Wnt+Fgf"", ""5"": ""Bmp+ctrl""}",
+velreg,0.7198,0.1312,0.8472,0.00038,0.5344,9,0.0011,0.1045,6,"{""-1"": ""RA+Fgf"", ""2"": ""Wnt+TgfB+Fgf"", ""0"": ""RA+Wnt+Fgf"", ""5"": ""RA+ctrl"", ""6"": ""ctrl"", ""7"": ""RA+Bmp"", ""1"": ""RA+Wnt+Fgf"", ""3"": ""Bmp+ctrl""}",
+minusX,0.8472,0.1824,0.8472,0.00032,0.5328,9,0.0011,0.1047,6,"{""-1"": ""RA+Fgf"", ""2"": ""Wnt+TgfB+Fgf"", ""0"": ""RA+Wnt+Fgf"", ""5"": ""RA+ctrl"", ""6"": ""ctrl"", ""7"": ""RA+Bmp"", ""1"": ""RA+Wnt+Fgf"", ""3"": ""Bmp+ctrl""}",

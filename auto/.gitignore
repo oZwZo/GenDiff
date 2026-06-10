@@ -1,0 +1,7 @@
+# Large generated artifacts — keep code/CSVs in git, keep these out (8 GB total).
+.cache/
+.tfcache/
+fields/
+tf_fields/
+*.npy
+*.log

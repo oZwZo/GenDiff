@@ -1,0 +1,7 @@
+tag,CBDir,ICCoh,n_macrostates,term_recovery,traj_err
+geo_m15_r3,0.8373,0.0282,-1,nan,KeyError('spliced')
+fermat_m15_r3,0.8385,0.0315,-1,nan,KeyError('spliced')
+old_r100,0.7202,0.1297,-1,nan,KeyError('spliced')
+otcfm,0.4986,0.1048,-1,nan,KeyError('spliced')
+velreg,0.7198,0.1297,-1,nan,KeyError('spliced')
+minusX,0.8472,0.1764,-1,nan,KeyError('spliced')
