@@ -40,12 +40,14 @@ def _geodesic(rep, k, power, sources):
 
 
 def knn_sampler(adata, *, use_rep, pseudotime_key, condition_key=None, same_condition=False,
-                metric="euclid", M=15, repeat=3, alpha=1.0, seed=0, cells=None):
+                metric="euclid", M=15, repeat=3, alpha=1.0, seed=0, cells=None, graph_k=15):
     """ROOT/GLOBAL or SAME-CONDITION higher-pseudotime neighbour sampler.
       ΔX_i = mean over `repeat` neighbours of (x_neighbour − x_i).
     Neighbours are higher-pseudotime cells, ranked by `metric` ∈ {euclid, geodesic, fermat}, optionally
     restricted to the same condition (same_condition=True -> BarRNA-seq traverse; False -> TF-Atlas root).
-    Cells with no eligible neighbour get ΔX=0. `cells` limits which rows are filled (default: all)."""
+    `graph_k` is the kNN graph degree used for euclid two-hop candidates and the geodesic graph (default
+    15 reproduces the shipped artifacts). Cells with no eligible neighbour get ΔX=0. `cells` limits which
+    rows are filled (default: all)."""
     import scipy.sparse as sp
     rng = np.random.default_rng(seed)
     X = (adata.X.toarray() if sp.issparse(adata.X) else np.asarray(adata.X)).astype(np.float32)
@@ -56,7 +58,7 @@ def knn_sampler(adata, *, use_rep, pseudotime_key, condition_key=None, same_cond
     D = np.zeros((n, G), dtype=np.float32)
 
     if metric in ("geodesic", "fermat"):
-        geo = _geodesic(rep, 15, 2 if metric == "fermat" else 1, cells)
+        geo = _geodesic(rep, graph_k, 2 if metric == "fermat" else 1, cells)
         pos = {int(c): p for p, c in enumerate(cells)}
         for c in cells:
             gd = geo[pos[int(c)]]; reach = np.where(np.isfinite(gd) & (gd > 0))[0]
@@ -66,7 +68,7 @@ def knn_sampler(adata, *, use_rep, pseudotime_key, condition_key=None, same_cond
             near = reach[np.argsort(gd[reach])[:M]]; dd = gd[near]
             D[c] = _draw(X, near, dd, alpha, repeat, rng) - X[c]
     else:
-        _, idx = _knn(rep, 15); adj = [idx[i][1:] for i in range(n)]
+        _, idx = _knn(rep, graph_k); adj = [idx[i][1:] for i in range(n)]
         for c in cells:
             cand = _two_hop(adj, c); cand = cand[pt[cand] > pt[c]]
             if cond is not None: cand = cand[cond[cand] == cond[c]]

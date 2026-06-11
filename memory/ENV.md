@@ -1,7 +1,9 @@
 # Environment: GenDiff
 > Generated: 2026-06-08 | Updated: 2026-06-08 (added GenDiff_env clone; added the manuscript
 > "quick_train" reproduction path — the paper's TF-Atlas figures come from there, not from the training
-> script); 2026-06-10 (added the `cellot` and `cellflow` baseline/comparison envs — see end of file).
+> script); 2026-06-10 (added the `cellot` and `cellflow` baseline/comparison envs — see end of file);
+> 2026-06-11 (added the `cpa` baseline/comparison env; added `cinemaot` into the existing `cospar`
+> env — see end of file).
 > Verified by import + forward-pass test. Part of: [codebase.md](codebase.md)
 
 ## Primary environment: `GenDiff_env` (micromamba)
@@ -225,3 +227,107 @@ one model via a learned condition embedding.
 CellFlow requires **Python ≥3.11**, so it cannot go in `GenDiff_env`/`PINN_env` (3.9.22), `cellot`
 (3.9.5), or `mfm`/`mioflow` (3.10 — would also churn their jax/ott/sklearn). It needs its own env,
 which is this one.
+
+## `cpa` (micromamba) — CPA, Compositional Perturbation Autoencoder
+Runs [CPA](https://github.com/theislab/CPA) (Lotfollahi et al. 2023, *Mol Syst Biol*; pip pkg
+**`cpa-tools`**) — a scvi-tools-based autoencoder that learns a disentangled additive latent
+(`z = z_basal + z_pert + z_covs`) with adversarial classifiers, for counterfactual perturbation-response
+prediction (drugs, doses, combinations, CRISPR, context transfer, batch correction).
+- Env path: `/rds/user/wz369/hpc-work/LIBS/mamba/envs/cpa` | Python **3.10.20**
+- Activate: `micromamba activate cpa` · one-off: `micromamba run -n cpa <cmd>`
+- Repo clone (source + tutorials): `/rds/user/wz369/hpc-work/external/CPA` (commit `fbd7c02`, depth-1)
+- **Memory + harness:** [`external/CPA/memory/CODEBASE_MEMORY.md`](../../external/CPA/memory/CODEBASE_MEMORY.md),
+  [`external/CPA/memory/HARNESS.md`](../../external/CPA/memory/HARNESS.md) — codebase map + train/predict tool
+  definitions. Also `external/CPA/memory/smoke_test.py` (working end-to-end test) and
+  `external/CPA/memory/requirements-lock.txt` (`pip freeze`).
+
+### Key package versions
+| Package | Version | Note |
+|---------|---------|------|
+| cpa-tools | **0.8.8** | needs Python <3.11 |
+| scvi-tools | 0.20.3 | CPA subclasses scvi `BaseModelClass`/`TrainingPlan`; do not cross the 1.0 boundary |
+| torch / torchaudio | **2.0.0+cu117** / 2.0.1 | CUDA 11.7 wheel (`nvidia-*-cu11`) |
+| lightning / pytorch-lightning | 2.2.5 / **1.9.5** | scvi+CPA import `pytorch_lightning` (1.x API) |
+| anndata / scanpy | 0.9.2 / 1.10.4 | old AnnData API |
+| numpy / scipy | 1.23.5 / 1.12.0 | repo pins (`numpy<1.24`) |
+| jax / jaxlib | 0.4.23 / 0.4.23 | **CPU-only** jaxlib (only the optional Ray tuner uses jax) |
+| ray | 2.9.3 | hyperparameter tuner (`run_autotune`) |
+| pyarrow | **14.0.2** | **manually pinned** — see provenance step 3 |
+
+### Provenance (how it was built)
+1. `micromamba create -y -n cpa -c conda-forge python=3.10 pip`
+2. `pip install cpa-tools` (pip resolves the tight pins above; chose torch 2.0.0+cu117, scvi 0.20.3, etc.)
+3. **Required fix — pyarrow:** `cpa-tools` pins `ray 2.9.x` but leaves `pyarrow` uncapped, so the fresh
+   install pulled pyarrow 24, and ray 2.9.3 then crashes on `import` with
+   `AttributeError: module 'pyarrow' has no attribute 'PyExtensionType'` (removed in pyarrow 16).
+   Fixed with `pip install "pyarrow<15"` → pyarrow 14.0.2. **`import cpa` fails without this — re-apply if rebuilt.**
+- Verified by full-stack import + `memory/smoke_test.py`: trains 2 epochs and predicts on synthetic data
+  (`CPA_pred` shape `(600, 40)`, exit 0). Run on the **login node (CPU)**; torch is the cu117 GPU build for
+  GPU nodes, but a GPU train has not yet been exercised (unlike cellot/cellflow which were A100-verified).
+
+### Gotchas (full list in HARNESS.md)
+- **Class-level encoder state:** `CPA.pert_encoder`/`covars_encoder`/`pert_smiles_map` are *class*
+  attributes set only when `None` → a 2nd `setup_anndata` in the same process silently reuses the 1st
+  dataset's encoders. Reset all three to `None` before setting up a new dataset.
+- **`recon_loss` must match data scale:** `'nb'`/`'zinb'` = raw counts (row sums > 0); `'gauss'` = log-norm.
+- **Split naming trap:** `split_key` values `train`/`test`/`ood` where **`test` is the *validation* split**
+  and `ood` is the held-out test set (override via `CPA(train_split=, valid_split=, test_split=)`).
+- **`cpa_metric` only logs in validation** → set `check_val_every_n_epoch <= max_epochs` (1 for short runs)
+  or early-stopping/`SaveBestState` break.
+- **`tests/test_cpa.py` is a dead API** (`drug_key`/`dose_key` + `scvi.data.setup_anndata`) — use
+  `memory/smoke_test.py` as the canonical example.
+- **`micromamba` is a shell function**, absent in non-interactive scripts — use the binary
+  `$MAMBA_EXE` = `/rds/user/wz369/hpc-work/LIBS/mamba/micromamba`.
+
+### Eligibility note
+CPA needs **Python <3.11** *and* a tightly-pinned old stack (`scvi-tools<1.0`, `torch<=2.0.1`,
+`numpy<1.24`, `jax<0.4.24`, `ray 2.9.x`). No existing env fit: `GenDiff_env`/`PINN_env` (torch 2.7),
+`cellot` (torch 1.11 / numpy 1.19 / anndata 0.7), `cospar` (numpy 1.26), `cellflow` (Python 3.11).
+Installing CPA into any of them would have broken it — hence its own env.
+
+## `cinemaot` (installed into the existing `cospar` env) — CINEMA-OT
+Runs [CINEMA-OT](https://github.com/vandijklab/CINEMA-OT) (Dong et al., *Nat Methods* 2023; pip pkg
+**`cinemaot`**) — a **causal** perturbation-effect method: separates confounder variation (FastICA +
+Chatterjee-ξ independence test) from treatment variation, then matches treated↔control cells by
+entropy-regularized **optimal transport** (a bundled Sinkhorn–Knopp, *not* POT) to get single-cell
+individual treatment effects, synergy, and per-gene confounder-vs-effect attribution. Pure-Python, light.
+- **Reused env (not dedicated):** `cospar` — `/rds/user/wz369/hpc-work/LIBS/mamba/envs/cospar` | Python **3.9.23**
+- Activate: `micromamba activate cospar` · one-off: `micromamba run -n cospar <cmd>`
+- Repo clone (editable source + tutorial): `/rds/user/wz369/hpc-work/external/CINEMA-OT` (commit `949bc3f`)
+- **Memory + harness:** [`external/CINEMA-OT/memory/CODEBASE_MEMORY.md`](../../external/CINEMA-OT/memory/CODEBASE_MEMORY.md),
+  [`external/CINEMA-OT/memory/HARNESS.md`](../../external/CINEMA-OT/memory/HARNESS.md), plus
+  `external/CINEMA-OT/memory/smoke_test.py` (working end-to-end test).
+
+### Why cospar (preferred existing, per request) instead of a new env
+CINEMA-OT's deps are **unpinned** and pure-Python (`numpy/pandas/scanpy/scikit-learn/scipy/statsmodels/
+anndata` — no torch/jax/POT), so it drops into any modern scanpy env with **zero dependency churn**.
+All of `cospar`, `cpa`, `GenDiff_env`, `mfm` already satisfied the 7 core deps; **`cospar` was picked
+because it additionally already had `gseapy` (for `cinemaot.utils`) and `leidenalg`+`igraph` (for
+`cinemaot_weighted`)** — nearly the whole optional stack was present. cinemaot version 0.0.4 (its
+`__version__` string still says 0.0.3 — cosmetic).
+
+### Provenance (how it was added)
+1. `pip install -e /rds/user/wz369/hpc-work/external/CINEMA-OT --no-deps` — `--no-deps` guarantees **no**
+   existing cospar package was up/downgraded; only the `cinemaot` editable package was added.
+2. `pip install plotly` → plotly 6.8.0 (+ pure-python `narwhals`) — the only missing `utils` dep
+   (gseapy/leidenalg/igraph were already present).
+- **Not installed (optional):** `scib`+`harmonypy` (only `cinemaot.benchmark` baselines need them),
+  `scsim` (only `simulation.py`). Add on demand.
+- Verified by import + `memory/smoke_test.py` on the **login node (CPU)**: ICA→ξ→Sinkhorn-OT→ITE runs,
+  outputs `cf (500×9)`, `ot_matrix (250×250)`, `TE (250×200)`, and recovers the planted perturbed genes
+  (top-20 effect recovery 1.00), exit 0. (CINEMA-OT is CPU-only — no GPU path.)
+
+### Gotchas (full list in HARNESS.md)
+- **`adata.obsm['X_pca']` is required** (ICA input) — run `sc.pp.pca` first.
+- **`thres` (ξ cutoff) is the main knob** and its default *differs by function*: `0.15`
+  (`cinemaot_unweighted`) vs `0.75` (`cinemaot_weighted`). `ValueError: No confounder components
+  identified` → raise `thres`.
+- **Pairwise only** (one control vs one treatment per call) — loop for multiple perturbations.
+- `cinemaot_weighted` needs Leiden (leidenalg/igraph — present); `attribution_scatter`/`NBregression`
+  need `adata.obsm['cf']` + a **sparse** `adata.raw`.
+- `Xi` tie-breaking RNG is unseeded → set `np.random.seed(...)` for reproducibility.
+
+### Footprint note
+This is the first comparison tool **co-located** in an existing env rather than getting its own
+(cellot/cellflow/cpa each needed dedicated envs due to hard version conflicts; CINEMA-OT has none).
+If cospar is ever rebuilt, re-run the two install steps above to restore cinemaot.
