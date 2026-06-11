@@ -44,11 +44,13 @@ def _build(dataset, name, adata, spec):
     if name == "real_velocity":
         return builders.from_velocity_layer(adata, spec.get("velocity_key") or "velocity"), dict(builder="from_velocity_layer")
     if name == "r3":
-        p = dict(metric="geodesic", M=15, repeat=3, **common)
-        return builders.knn_sampler(adata, **p), dict(builder="knn_sampler", **{k: p[k] for k in ("metric", "M", "repeat", "same_condition")})
+        p = dict(config="config1", **common)
+        return builders.knn_sampler(adata, **p), dict(builder="knn_sampler", config="config1",
+                                                      **{k: p[k] for k in ("same_condition",)})
     if name == "r3_euclid_m30":
-        p = dict(metric="euclid", M=30, repeat=3, **common)
-        return builders.knn_sampler(adata, **p), dict(builder="knn_sampler", **{k: p[k] for k in ("metric", "M", "repeat", "same_condition")})
+        p = dict(config="config2", **common)
+        return builders.knn_sampler(adata, **p), dict(builder="knn_sampler", config="config2",
+                                                      **{k: p[k] for k in ("same_condition",)})
     if name == "zero_aug":
         base, _ = get(dataset, "r3", adata=adata)
         return builders.zero_aug(adata, base, spec["pseudotime_key"], q=0.8), dict(builder="zero_aug", base="r3", q=0.8)

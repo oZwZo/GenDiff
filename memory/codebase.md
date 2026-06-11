@@ -191,7 +191,79 @@ manuscript, but only for the BarRNA-seq trajectory and latent/embedding analyses
   `Latent_Interaction.interact`, `my_VAE` typos, `DDPM_reconX.__init__` arg order.
 - `from turtle import forward` is a harmless stray import repeated across files.
 
-## 9. AGENT TASK ROUTING HINTS
+## 9. MODEL-DEVELOPMENT LAYER (`GenDiff-manuscript/trajectory_model/`)
+> Added 2026-06-11. Full coordination spec and verified numbers are in
+> `GenDiff-manuscript/MODEL_DEV_ARCHITECTURE.md`. This section is a quick-reference overlay on the
+> codebase memory.
+
+### What is it
+A standalone model-improvement sub-project that runs **on top of** the manuscript's `Pretrained_GenDiff`
+(Ridge-prior head in `src/_linear.py`). All new code lives under `GenDiff-manuscript/trajectory_model/`;
+nothing in `src/` has been changed.
+
+### ΔX-sampler findings (branch `sampler-auto`, completed 2026-06-10)
+Source: `GenDiff-manuscript/response/R1.3/findings.md`.
+- r=3 traverse draws ≈ r=100 on condition-direction at 1/30 cost. r100 over-averages, amplifying the
+  reversion confound (`rev_collin` = 0.847 on BarRNA-seq: 85% of the ΔX target is collinear with −X).
+- Best sampler for velocity-less data (BarRNA-seq): geodesic/Fermat neighbourhood metric, M=15, r=3.
+  Geodesic advantage does **not** generalise to TF-Atlas where real RNA velocity exists.
+- Valid trajectory metric = `pt_drift` (forward pseudotime motion under CellRank T). CBDir/all-gene r²
+  are reversion-dominated and must not be used as headline. The trivial −X baseline outscores every method
+  on r²/cosine of the r100 target — confirm any benchmark claim uses the non-confounded metric.
+
+### Model tracks (`trajectory_model/track_*.py`)
+All tracks wrap the manuscript `Pretrained_GenDiff`; Ridge prior is required — from-scratch velocity nets
+collapse to L2a ≈ 0.16.
+
+| Key | File | E-dist↓ | Description |
+|---|---|---|---|
+| `zerov` | `track_zerov.py` | 188.0 | Ridge base + ΔX=0 supervision on train terminal cells |
+| `gate` | `track_gate.py` | 134.4 | Ridge base × learned scalar gate s_θ(x,C)∈[0,1] |
+| `combo` | `track_combo.py` | **104.3** | ZeroVelocityGate: zerov base + gate MLP; **headline model** |
+| `stoch` | `track_stoch.py` | 170.6 | combo + calibrated per-condition Gaussian noise σ_C (PCA-50); var-ratio 0.744 |
+| `ot_anchored` | `track_ot.py` | 247 | OT-anchored; dead-end (scalar-α cannot restore spread) |
+| `ode_horizon` | `track_ode.py` | 257.3 | NeuralODE per-condition horizon; best prop-TV (0.681) |
+
+OT-CFM reference bar = 218.7. `combo` beats it by 52%; `gate`, `stoch`, `zerov` also beat it.
+
+### 3-tier metric panel
+`metrics.py` (L1/L2a/L2b/L3) + `run_scorecard.py --predictor <key> [--seed N]`. Dependency-light
+(numpy/scipy/sklearn/POT). Score predicted populations vs observed cells, never against the sampler
+target. K=10 gene-space rollout is the endpoint for displacement models; `predict_population` models
+bypass the rollout. See `trajectory_model/EVAL_PANEL.md` for full metric table.
+
+### Transport baselines (`trajectory_model/transport/`)
+| Script | Method | Env |
+|---|---|---|
+| `run_cellot.py` | CellOT ICNN (Fig-6 TFs, 5 conditions) | `cellot` |
+| `run_cellflow.py` | CellFlow OT flow-matching (all TFs, `--seed`) | `cellflow` |
+| `run_cpa.py` | CPA compositional AE (all TFs, `recon_loss=gauss`, `--seed`) | `cpa` |
+| `run_seeds.sh` + `aggregate_seeds.py` | Seed repeats (0/1/2) + mean±std aggregation | `GenDiff_env` |
+
+Scored by `eval_transport.py`. Fair-target and diagnostic analyses: `rescore_matched.py` (terminal/test/
+whole targets), `eval_control_start.py` (control-start E-dist), `pseudotime_dist.py` (kNN-regressed
+pseudotime of X̂ vs GT), `stratify_push.py`/`investigate_push.py` (E-dist stratified by differentiation
+push).
+
+**Headline finding**: transport methods win aggregate E-distance by reproducing the undifferentiated
+control bulk (most TF conditions have low differentiation push; observed test median pseudotime ~0.05,
+below control ~0.08). On genuinely differentiating conditions (high tail_shift = q90(obs)-q90(ctrl)
+tertile), GenDiff trajectory methods (combo/stoch) are competitive and CellFlow collapses (E-dist
+63→229). Pseudotime distribution (`pseudotime_dist.py`) exposes the mechanism, OPPOSITE to first
+intuition: CPA/CellFlow COLLAPSE to a narrow low-pseudotime spike (CellFlow median 0.02, below control)
+and generate almost no differentiated cells; combo/stoch/OTCFM REPRODUCE the differentiation spread/tail.
+
+**GenDiff failure diagnosis** (`diagnose_gendiff.py`, control-start E-dist vs test pop): combo's
+per-condition E-dist is flat ~220 across the whole push axis — it moves control cells forward by a
+near-constant amount regardless of whether the TF differentiates (panel C). CPA is ~110 when the TF is
+inert, rising only when it differentiates. So combo over-moves on the inert majority (~2/3 of conditions),
+which dominates and sinks its aggregate E-distance. Root cause: the ΔX field has a condition-invariant
+forward bias and NO fixed point / "don't-move" mode; the commitment gate isn't suppressing inert
+conditions. The ode_horizon track's per-condition step calibration (K 1-50) doesn't fix it (E-dist 257)
+because the issue is field DIRECTION, not integration horizon. Fix direction: explicit ΔX≈0 supervision
+on non-differentiating TFs / condition-gated field magnitude.
+
+## 10. AGENT TASK ROUTING HINTS
 - "Reproduce / modify the manuscript TF-Atlas model or its figures (4–6)" → `some_tutorials/TF-atlas/quick_train/`
   + src/_linear.py (`Pretrained_GenDiff`) — see the **MANUSCRIPT MODEL** section, NOT the diffusion pipeline.
 - "Change the network / add an ε architecture" → src/_epsilon_module.py + [modules/models.md](modules/models.md)

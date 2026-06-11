@@ -750,8 +750,60 @@ class Diffuse_Dataset(Condition_AnnDataSet):
         else:
             return X, batch_idx, condition_idx, delta_X, t
 
+class Precomputed_Delta_Dataset(torch.utils.data.Dataset):
+    """ΔX-supervision dataset backed by a *precomputed* target (the new knn_sampler output stored in
+    `adata.obsm[target_obsm]`), rather than sampling a neighbour on the fly like `Path_Diffuse`.
+
+    It yields the exact training tuple the diffusion learners expect — (X, batch_idx, condition_idx,
+    delta_X, t) — where delta_X is read straight from obsm and t is the cell's discrete pseudotime. This
+    is the dataset the `gendiff.GenDiff` facade uses so the sampler choice (config1/config2/others) is
+    made once at setup time and the training loop just reads it. Path_Diffuse is kept for backward
+    compatibility / reproducing the manuscript but is deprecated in favour of this class.
+    """
+    def __init__(self, adata, *, condition_key, token_dict, target_obsm="gendiff_dX",
+                 layer="X", time_key="discrete_time", split_key="split", which_set="train",
+                 batch_key=None, max_multiplexing=1, delimiter="|"):
+        import scipy.sparse as sp
+        if split_key is not None and split_key in adata.obs:
+            mask = (adata.obs[split_key].astype(str).values == which_set)
+        else:
+            mask = np.ones(adata.n_obs, dtype=bool)
+        if mask.sum() == 0:
+            raise ValueError(f"Precomputed_Delta_Dataset: no cells with {split_key}=={which_set!r}")
+
+        Xfull = adata.layers[layer] if (layer not in (None, "X") and layer in adata.layers) else adata.X
+        Xfull = Xfull.toarray() if sp.issparse(Xfull) else np.asarray(Xfull)
+        self.X = torch.from_numpy(np.ascontiguousarray(Xfull[mask])).float()
+        self.dX = torch.from_numpy(np.ascontiguousarray(
+            np.asarray(adata.obsm[target_obsm])[mask])).float()
+        self.t = torch.from_numpy(np.asarray(adata.obs[time_key].values)[mask].astype(np.int64))
+        self.cond = np.asarray(adata.obs[condition_key].astype(str).values)[mask]
+
+        self.token_dict = token_dict
+        self.reverse_token = {v: k for k, v in token_dict.items()}
+        self.null_cond_key = self.reverse_token[0]
+        self.max_multiplexing = max_multiplexing
+        self.delimiter = delimiter
+        self.use_batch_index = batch_key is not None
+        self.batch = np.asarray(adata.obs[batch_key].values)[mask] if self.use_batch_index else None
+
+    def __len__(self):
+        return self.X.shape[0]
+
+    def __getitem__(self, i):
+        tokens = self.cond[i].split(self.delimiter)
+        if len(tokens) < self.max_multiplexing:
+            tokens += [self.null_cond_key] * (self.max_multiplexing - len(tokens))
+        condition_idx = np.array([self.token_dict[tok] for tok in tokens], dtype=np.int64)
+        batch_idx = self.batch[i] if self.use_batch_index else []
+        return self.X[i], batch_idx, condition_idx, self.dX[i], self.t[i]
+
+
 class Path_Diffuse(Diffuse_Dataset):
-    def __init__(self, 
+    """DEPRECATED. On-the-fly neighbour-difference sampler used in the manuscript. Kept for
+    reproducibility; new training should use `gendiff.GenDiff` (knn_sampler + Precomputed_Delta_Dataset),
+    which is more robust to k / traversal depth (see response R1.1)."""
+    def __init__(self,
                 AnnData : AnnData, 
                 unique_token_dict : dict,
                 repeat: float = 1,

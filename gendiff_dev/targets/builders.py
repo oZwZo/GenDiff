@@ -6,7 +6,45 @@ auto/sweep.py and auto/tf_sweep.py (collisions C1/C5/C7). Every builder returns 
 (n_obs, n_genes) aligned to adata.obs order. `repeat` (C5) is a plain parameter, never a hardcoded 100.
 """
 from __future__ import annotations
+import warnings
 import numpy as np
+
+# Named presets for knn_sampler. A preset fixes (metric, M, repeat); same_condition / use_rep /
+# graph_k / alpha are still chosen by the caller (the dataset decides same_condition density).
+SAMPLER_CONFIGS = {
+    "config1": dict(metric="geodesic", M=15, repeat=3),  # r3  — recommended default
+    "config2": dict(metric="euclid",   M=30, repeat=3),  # r3_euclid_m30 — metric-tie reference
+}
+
+
+def _resolve_sampler_config(config, metric, M, repeat, same_condition, use_rep, graph_k, alpha, verbose):
+    """Turn (config, explicit params) into the (metric, M, repeat) actually used, and announce it.
+    Presets ('config1'/'config2') ignore any explicitly-passed metric/M/repeat (with a warning);
+    'others' reads them. Unknown config is a hard error so a typo never silently runs config1."""
+    explicit = {k: v for k, v in (("metric", metric), ("M", M), ("repeat", repeat)) if v is not None}
+    if config in SAMPLER_CONFIGS:
+        vals = dict(SAMPLER_CONFIGS[config])
+        if explicit:
+            warnings.warn(
+                f"knn_sampler: config={config!r} is a fixed preset "
+                f"(metric={vals['metric']}, M={vals['M']}, repeat={vals['repeat']}); the explicit "
+                f"{explicit} you passed are IGNORED. Pass config='others' to use your own values.",
+                stacklevel=3)
+        src = f"preset config={config!r}"
+    elif config == "others":
+        vals = dict(metric=metric or "euclid",
+                    M=15 if M is None else M,
+                    repeat=3 if repeat is None else repeat)
+        src = "config='others' (user-supplied params)"
+    else:
+        raise ValueError(
+            f"knn_sampler: unknown config {config!r}. Choose 'config1' (geodesic, M=15, repeat=3 — "
+            f"recommended), 'config2' (euclid, M=30, repeat=3), or 'others' (then pass metric/M/repeat).")
+    if verbose:
+        print(f"[knn_sampler] {src} -> metric={vals['metric']} M={vals['M']} repeat={vals['repeat']} "
+              f"| same_condition={same_condition} use_rep={use_rep!r} graph_k={graph_k} alpha={alpha}",
+              flush=True)
+    return vals["metric"], vals["M"], vals["repeat"]
 
 
 def from_obsm(adata, key="Tr_SampledX_r100"):
@@ -40,15 +78,30 @@ def _geodesic(rep, k, power, sources):
 
 
 def knn_sampler(adata, *, use_rep, pseudotime_key, condition_key=None, same_condition=False,
-                metric="euclid", M=15, repeat=3, alpha=1.0, seed=0, cells=None, graph_k=15):
+                config="config1", metric=None, M=None, repeat=None, alpha=1.0, seed=0,
+                cells=None, graph_k=15, verbose=True):
     """ROOT/GLOBAL or SAME-CONDITION higher-pseudotime neighbour sampler.
       ΔX_i = mean over `repeat` neighbours of (x_neighbour − x_i).
     Neighbours are higher-pseudotime cells, ranked by `metric` ∈ {euclid, geodesic, fermat}, optionally
     restricted to the same condition (same_condition=True -> BarRNA-seq traverse; False -> TF-Atlas root).
+
+    `config` selects the parameter combination and is the recommended entry point:
+      'config1' (default) -> metric=geodesic, M=15, repeat=3   (the r3 recommendation)
+      'config2'           -> metric=euclid,   M=30, repeat=3   (r3_euclid_m30 metric-tie reference)
+      'others'            -> read the explicit metric / M / repeat you pass.
+    Under a preset, any metric/M/repeat you also pass are ignored (with a warning); set config='others'
+    to use them. The actual settings are printed when verbose=True. same_condition / use_rep / graph_k /
+    alpha are honoured under every config (the dataset, not the preset, decides same_condition).
+
     `graph_k` is the kNN graph degree used for euclid two-hop candidates and the geodesic graph (default
     15 reproduces the shipped artifacts). Cells with no eligible neighbour get ΔX=0. `cells` limits which
     rows are filled (default: all)."""
     import scipy.sparse as sp
+    metric, M, repeat = _resolve_sampler_config(
+        config, metric, M, repeat, same_condition, use_rep, graph_k, alpha, verbose)
+    if same_condition and not condition_key:
+        warnings.warn("knn_sampler: same_condition=True but condition_key is None; running global "
+                      "(condition-agnostic) sampling.", stacklevel=2)
     rng = np.random.default_rng(seed)
     X = (adata.X.toarray() if sp.issparse(adata.X) else np.asarray(adata.X)).astype(np.float32)
     rep = np.asarray(adata.obsm[use_rep]); n, G = X.shape
@@ -77,6 +130,10 @@ def knn_sampler(adata, *, use_rep, pseudotime_key, condition_key=None, same_cond
             if cand.size > M:
                 o = np.argsort(dd)[:M]; cand = cand[o]; dd = dd[o]
             D[c] = _draw(X, cand, dd, alpha, repeat, rng) - X[c]
+    if verbose:
+        nz = int((np.abs(D[cells]).sum(1) == 0).sum())
+        print(f"[knn_sampler] built ΔX {D.shape[0]}x{D.shape[1]}; {nz}/{len(cells)} requested cells "
+              f"had no eligible higher-pseudotime neighbour -> ΔX=0", flush=True)
     return D
 
 
