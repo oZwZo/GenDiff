@@ -107,28 +107,6 @@ when conditions are densely sampled (median ≥ 50 cells/condition) and False ot
 prints the exact settings it runs, and how many cells had no eligible higher-pseudotime neighbour
 (those get ΔX = 0).
 
-## API reference (the parts you call)
-
-- `GenDiff.setup_anndata(adata, *, condition_key, pseudotime_key, use_rep, control=None, layer="X",
-  split_key=None, batch_key=None, sampler_config="config1", same_condition="auto",
-  sampler_kwargs=None, target_obsm="gendiff_dX", rebuild=False, ...)` — validates fields, builds the
-  ΔX target into `adata.obsm["gendiff_dX"]`, writes `adata.obs["discrete_time"]`, a `gendiff_split`
-  column (if `split_key` is None), and registers everything under `adata.uns["gendiff_setup"]` /
-  `adata.uns["gendiff_token_dict"]`. Re-run with `rebuild=True` to recompute the target.
-- `GenDiff(adata, *, hidden_size=(512,512,512,256,512,512,512), condition_emb_dim=256, time_emb_dim=64,
-  timesteps=200, loss_type="huber", ...)` — builds the epsilon net + diffusion learner. `condition_emb_dim`
-  should appear in `hidden_size` (it becomes the latent layer) or it is inserted with a warning.
-- `model.train(max_epochs=200, batch_size=128, lr=1e-3, accelerator="auto", devices=1, patience=50,
-  early_stopping=True, default_root_dir=None, **trainer_kwargs)` — wraps a PyTorch-Lightning Trainer,
-  monitors `val_loss`, checkpoints the best epoch.
-- `model.predict_delta(adata=None, condition=None, *, batch_size=1024, device=None)` — one forward pass
-  per cell; returns the (n_obs, n_genes) ΔX field aligned to obs order. `condition=None` uses the
-  control (token 0).
-- `model.predict_population(adata=None, condition=None, ...)` — `X + predict_delta(...)`.
-- `model.save(dir)` / `GenDiff.load(dir, adata)` — `model.pt` (state dict) + `attr.json`
-  (setup, init params, token dict).
-
-## Tutorials
 
 - [`tutorials/1_preprocessing_and_training.ipynb`](tutorials/1_preprocessing_and_training.ipynb) — from a
   raw-ish AnnData to a trained, saved model: the four preprocessing requirements, `setup_anndata`,
@@ -141,14 +119,3 @@ prints the exact settings it runs, and how many cells had no eligible higher-pse
 The notebooks are runnable templates; they have not been executed here (training needs a GPU and the
 full datasets). Expect a 2k-cell dataset to train in a few minutes on one GPU.
 
-## How the code is organized
-
-- `gendiff/` — the high-level API (`GenDiff` facade). The only package most users touch.
-- `src/` — the model internals: epsilon net (`_epsilon_module.py`), diffusion learner (`_learner.py`),
-  datasets (`_reader.py`, including the new `Precomputed_Delta_Dataset` that serves the precomputed ΔX).
-- `gendiff_dev/` — the sampler and the development/benchmark registries
-  (`targets/builders.py::knn_sampler`, the dataset and target registries).
-
-The old on-the-fly `Path_Diffuse` sampler is kept in `src/_reader.py` but **deprecated**; it is only for
-reproducing the manuscript. New training should go through `gendiff.GenDiff`, which precomputes ΔX with
-the knn sampler and is more robust to the choice of k and traversal depth.
