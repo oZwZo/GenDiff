@@ -14,6 +14,8 @@ Canonical names (resolved per-dataset by DEFS):
   r3_euclid_m30 r=3 euclid M30 (metric-tie reference)            -> knn_sampler
   real_velocity the use-the-velocity reference                   -> from_velocity_layer
   zero_aug      terminal-ΔX≈0 supervision on top of r3           -> zero_aug(base=r3)
+  smooth_nb     per-cluster NB μ(t) derivative (SAMPLER_OPT win)  -> smooth_deriv(mode='nb')
+  smooth_unbiased  auto-root (potency) + per-cluster μ(t) deriv     -> smooth_deriv(mode='auto', auto_root)
 """
 from __future__ import annotations
 import os, json, hashlib, numpy as np
@@ -30,7 +32,7 @@ def _paths(dataset, name):
 
 
 def list_targets():
-    return ["r100", "r3", "r3_euclid_m30", "real_velocity", "zero_aug"]
+    return ["r100", "r3", "r3_euclid_m30", "real_velocity", "zero_aug", "smooth_nb", "smooth_unbiased"]
 
 
 def _build(dataset, name, adata, spec):
@@ -54,6 +56,16 @@ def _build(dataset, name, adata, spec):
     if name == "zero_aug":
         base, _ = get(dataset, "r3", adata=adata)
         return builders.zero_aug(adata, base, spec["pseudotime_key"], q=0.8), dict(builder="zero_aug", base="r3", q=0.8)
+    if name == "smooth_nb":
+        p = dict(pseudotime_key=spec["pseudotime_key"], use_rep=spec["use_rep"], mode="nb",
+                 cluster_key="louvain")
+        return builders.smooth_deriv(adata, **p), dict(builder="smooth_deriv", mode="nb", cluster_key="louvain")
+    if name == "smooth_unbiased":
+        # only the ROOT is automated; algorithmic louvain + counts are routine preprocessing, not priors.
+        p = dict(pseudotime_key=spec["pseudotime_key"], use_rep=spec["use_rep"], mode="auto",
+                 cluster_key="louvain", auto_root=True)
+        return builders.smooth_deriv(adata, **p), dict(builder="smooth_deriv", mode="auto",
+                                                       cluster_key="louvain", auto_root=True)
     raise KeyError(f"unknown target {name!r}; known: {list_targets()}")
 
 

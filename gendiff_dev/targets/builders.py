@@ -150,6 +150,229 @@ def _draw(X, near, d, alpha, repeat, rng):
     return X[pick].mean(0)
 
 
+# ---------------------------------------------------------------------------------------------------
+# smooth_deriv — the SAMPLER_OPT winner: the derivative of a SMOOTHED mean-expression trajectory.
+#
+# The one-hop neighbour difference (knn_sampler) has E[ΔX | x] dominated by regression-to-the-mean
+# (ΔX ≈ −x), so model-free integration of it reverts and collapses cells to the data centroid
+# (revcorr ≈ −0.9). Replacing it with d/dt of a smoothed per-gene mean trajectory μ(t) removes that
+# radial component by construction (revcorr ≈ 0), keeps the genuine forward kinetics, and self-slows at
+# the terminal plateau (dμ/dt → 0). Three modes, increasing in how few priors they need:
+#   'nb'    per-cluster NB/Poisson μ(t) in count space, ΔX = dlog1p(μ)/dt — best balance (needs counts).
+#   'gauss' per-cluster cubic-spline μ(t) fit directly in adata.X space     — count-free fallback.
+#   'local' cluster-free per-cell local linear slope dX/dt over the use_rep kNN — the unbiased variant
+#           (no supervised partition); pair with auto_root=True for a fully prior-free target.
+# ---------------------------------------------------------------------------------------------------
+def _dense(M):
+    import scipy.sparse as sp
+    return (M.toarray() if sp.issparse(M) else np.asarray(M))
+
+
+def _spline_basis(t, n_knots=5):
+    """Truncated-power cubic basis B(t) and its time-derivative Bp(t); interior knots at t-quantiles."""
+    t = np.asarray(t, float)
+    ks = np.quantile(t, np.linspace(0, 1, n_knots + 2)[1:-1])
+    cols = [np.ones_like(t), t, t ** 2, t ** 3]
+    dcols = [np.zeros_like(t), np.ones_like(t), 2 * t, 3 * t ** 2]
+    for k in ks:
+        rp = np.clip(t - k, 0, None)
+        cols.append(rp ** 3); dcols.append(3 * rp ** 2)
+    return np.stack(cols, 1), np.stack(dcols, 1)
+
+
+def _smooth_gauss(X, t, n_knots=5):
+    """Spline fit X ~ B(t) per gene (one lstsq for all genes); return dμ/dt = Bp @ coef (X's own space)."""
+    B, Bp = _spline_basis(t, n_knots)
+    coef, *_ = np.linalg.lstsq(B, X, rcond=None)
+    return Bp @ coef
+
+
+def _smooth_nb(counts, t, n_knots=5, n_iter=3, chunk=400):
+    """Poisson/NB-mean spline in count space (vectorised IRLS, gene-chunked): log μ = B β; returns the
+    log1p-space derivative dlog1p(μ)/dt = μ'/(1+μ) with μ' = μ·(Bp β)."""
+    B, Bp = _spline_basis(t, n_knots)
+    n, g = counts.shape; nb = B.shape[1]; V = np.zeros((n, g), np.float64)
+    for c0 in range(0, g, chunk):
+        c1 = min(c0 + chunk, g); yk = counts[:, c0:c1]
+        beta, *_ = np.linalg.lstsq(B, np.log1p(yk), rcond=None)
+        for _ in range(n_iter):
+            eta = B @ beta; mu = np.exp(np.clip(eta, -20, 20))
+            Wz = mu * eta + (yk - mu)
+            A = np.einsum("ni,ng,nj->gij", B, mu, B, optimize=True)
+            rhs = np.einsum("ni,ng->gi", B, Wz, optimize=True)
+            A += 1e-6 * np.eye(nb)[None]
+            beta = np.linalg.solve(A, rhs[..., None])[..., 0].T
+        eta = B @ beta; mu = np.exp(np.clip(eta, -20, 20)); dmu = mu * (Bp @ beta)
+        V[:, c0:c1] = dmu / (1.0 + mu)
+    return V
+
+
+def _local_slope(X, t, rep, k=15, chunk=2000):
+    """Cluster-free per-cell local linear trajectory slope dX/dt: distance-kernel-weighted OLS-through-x_i
+    of each gene on (t_nb − t_i) over the cell's k neighbours in `rep`. Continuous analogue of per-cluster
+    μ(t) with no supervised partition."""
+    from sklearn.neighbors import NearestNeighbors
+    n = X.shape[0]
+    nn = NearestNeighbors(n_neighbors=k + 1).fit(rep); d, idx = nn.kneighbors(rep)
+    idx = idx[:, 1:]; d = d[:, 1:]; V = np.zeros_like(X)
+    for c0 in range(0, n, chunk):
+        c1 = min(c0 + chunk, n); ii = idx[c0:c1]; dd = d[c0:c1]
+        w = np.exp(-dd ** 2 / (np.median(dd, 1, keepdims=True) ** 2 + 1e-9))
+        dt = t[ii] - t[c0:c1, None]; dX = X[ii] - X[c0:c1, None, :]
+        num = np.einsum("bk,bkg->bg", w * dt, dX); den = np.einsum("bk,bk->b", w, dt * dt) + 1e-9
+        V[c0:c1] = num / den[:, None]
+    return V
+
+
+def _resolve_counts(adata, counts_layer):
+    """Return (counts_linear, std_log1p) for the NB mode, or (None, None) if no count source is available.
+    Source priority: an explicit linear-count layer; else adata.raw (assumed log1p, aligned to var_names).
+    std_log1p is the per-gene std of log1p(counts) — used to map the log1p-space derivative into adata.X's
+    space when adata.X is a z-score of that same log1p (the manuscript convention)."""
+    if counts_layer is not None and counts_layer in (adata.layers or {}):
+        counts = _dense(adata.layers[counts_layer]).astype(np.float64)
+        std_log1p = np.log1p(np.clip(counts, 0, None)).std(0)
+        return counts, std_log1p
+    if adata.raw is not None:
+        try:
+            log1p = _dense(adata.raw[:, adata.var_names].X).astype(np.float64)
+        except Exception:
+            log1p = _dense(adata.raw.X).astype(np.float64)
+        if log1p.shape[1] == adata.n_vars:
+            return np.expm1(log1p), log1p.std(0)
+    return None, None
+
+
+def _potency(adata):
+    """Transcriptional-potency proxy = number of EXPRESSED genes per cell (CytoTRACE's gene-counts
+    signature; higher = more potent = closer to the root). Robust on z-scored adata.X, where an
+    entropy-of-expression proxy is meaningless. Source priority: raw counts (#nonzero), then an obs
+    detected-gene column, then (last resort) shifted-expression entropy."""
+    import scipy.sparse as sp
+    if adata.raw is not None:
+        R = adata.raw.X
+        nz = np.asarray((R > 0).sum(1)).ravel() if sp.issparse(R) else (np.asarray(R) > 0).sum(1)
+        return nz.astype(float)
+    for k in ("n_genes", "nFeature_RNA", "n_genes_by_counts", "n_counts"):
+        if k in adata.obs:
+            return np.asarray(adata.obs[k], float)
+    from scipy.stats import entropy
+    X = _dense(adata.X).astype(np.float64)
+    warnings.warn("smooth_deriv auto_root: no count/detected-gene source; falling back to shifted-"
+                  "expression entropy (weak on z-scored X).", stacklevel=3)
+    return entropy(X - X.min(0, keepdims=True) + 1e-5, axis=1)
+
+
+def _auto_root_dpt(adata, use_rep, pseudotime_key, verbose=True):
+    """Prior-free root: the most transcriptionally potent cell (kNN-smoothed #expressed-genes — CytoTRACE's
+    gene-counts signature), then recompute diffusion pseudotime from it. Falls back to the existing
+    pseudotime if the diffusion basis for sc.tl.dpt is unavailable."""
+    from sklearn.neighbors import NearestNeighbors
+    pot = _potency(adata)
+    # smooth over a TRUE embedding kNN (robust to a dense / fully-connected stored obsp graph, which would
+    # otherwise reduce the smoothing to a meaningless global mean).
+    import scipy.sparse as sp
+    rep = np.asarray(adata.obsm[use_rep], float); rep = rep[:, :50] if rep.shape[1] > 50 else rep
+    nn = NearestNeighbors(n_neighbors=min(16, len(rep))).fit(rep); _, idx = nn.kneighbors(rep)
+    pot = pot[idx].mean(1)
+    root = int(np.argmax(pot))
+    # Compute dpt from the auto-root. If the stored graph is dense/degenerate (e.g. a fully-connected obsp),
+    # the stored diffmap is unreliable, so rebuild neighbors+diffmap from use_rep on a COPY (clean dpt, no
+    # mutation). If the graph is already a sane sparse kNN, mutate-and-restore in place (cheap, no copy).
+    C = adata.obsp.get("connectivities")
+    degenerate = (C is None) or (not sp.issparse(C)) or (C.getnnz(1).mean() > 45)
+    try:
+        import scanpy as sc
+        if degenerate:
+            b = adata.copy()
+            sc.pp.neighbors(b, n_neighbors=16, use_rep=use_rep)
+            sc.tl.diffmap(b)
+            b.uns["iroot"] = root; sc.tl.dpt(b)
+            pt = np.asarray(b.obs["dpt_pseudotime"], float); del b
+        else:
+            saved_iroot = adata.uns.get("iroot", None)
+            saved_dpt = adata.obs["dpt_pseudotime"].copy() if "dpt_pseudotime" in adata.obs else None
+            adata.uns["iroot"] = root; sc.tl.dpt(adata)
+            pt = np.asarray(adata.obs["dpt_pseudotime"], float)
+            if saved_dpt is not None:
+                adata.obs["dpt_pseudotime"] = saved_dpt
+            if saved_iroot is not None:
+                adata.uns["iroot"] = saved_iroot
+            elif "iroot" in adata.uns:
+                del adata.uns["iroot"]
+        if verbose:
+            print(f"[smooth_deriv] auto-root = cell {root} (max smoothed #expressed-genes potency); "
+                  f"dpt recomputed{' on rebuilt graph' if degenerate else ''}", flush=True)
+    except Exception as e:
+        warnings.warn(f"smooth_deriv: auto_root could not recompute dpt ({e!r}); using existing "
+                      f"{pseudotime_key!r}.", stacklevel=3)
+        pt = np.asarray(adata.obs[pseudotime_key], float)
+    return pt
+
+
+def smooth_deriv(adata, *, pseudotime_key, use_rep, mode="auto", cluster_key="louvain",
+                 counts_layer=None, n_knots=5, graph_k=15, auto_root=False, zscored=None,
+                 min_cluster=30, seed=0, verbose=True):
+    """Smoothed mean-trajectory-derivative ΔX target (the SAMPLER_OPT winner). Returns (n_obs, n_genes) in
+    adata.X's units, aligned to obs order, with the mean-reversion confound removed by construction.
+
+    mode : 'nb' | 'gauss' | 'local' | 'auto'. 'auto' picks 'nb' if counts are available, else 'gauss' if
+           `cluster_key` is present, else 'local'.
+    cluster_key : obs partition for the per-cluster fit ('nb'/'gauss'); clusters smaller than `min_cluster`
+           get ΔX=0. Ignored by 'local'. If absent, the per-cluster modes fall back to one global cluster.
+    counts_layer : a LINEAR-count layer for 'nb'; if None, adata.raw (log1p) is used. Without any count
+           source, 'nb' downgrades to 'gauss'.
+    auto_root : recompute pseudotime from an auto-selected potency root instead of trusting the supplied
+           root (removes the manual-root prior). zscored : whether adata.X is a z-score of log1p (auto-
+           detected from the fraction of negative entries when None) — controls the NB→X-space rescaling.
+    """
+    X = _dense(adata.X).astype(np.float64)
+    n, G = X.shape
+    rep = np.asarray(adata.obsm[use_rep], float)
+    rep = rep[:, :50] if rep.shape[1] > 50 else rep
+    t = _auto_root_dpt(adata, use_rep, pseudotime_key, verbose) if auto_root \
+        else np.asarray(adata.obs[pseudotime_key], float)
+    counts, std_log1p = _resolve_counts(adata, counts_layer)
+    if zscored is None:
+        zscored = float((X < 0).mean()) > 0.1
+
+    if mode == "auto":
+        mode = "nb" if counts is not None else ("gauss" if cluster_key in adata.obs else "local")
+    if mode == "nb" and counts is None:
+        warnings.warn("smooth_deriv: mode='nb' but no count source (counts_layer / adata.raw); "
+                      "falling back to mode='gauss'.", stacklevel=2)
+        mode = "gauss"
+    if verbose:
+        print(f"[smooth_deriv] mode={mode} cluster_key={cluster_key!r} auto_root={auto_root} "
+              f"zscored={zscored} n_knots={n_knots}", flush=True)
+
+    if mode == "local":
+        D = _local_slope(X, t, rep, k=graph_k)
+    else:
+        if cluster_key in adata.obs:
+            clusters = adata.obs[cluster_key].astype(str).to_numpy()
+        else:
+            warnings.warn(f"smooth_deriv: cluster_key {cluster_key!r} not in obs; fitting one global "
+                          f"trajectory (mode={mode}).", stacklevel=2)
+            clusters = np.zeros(n, dtype=object)
+        D = np.zeros_like(X)
+        for cl in np.unique(clusters):
+            sub = np.where(clusters == cl)[0]
+            if sub.size < min_cluster:
+                continue
+            if mode == "nb":
+                vlog = _smooth_nb(counts[sub], t[sub], n_knots)
+                D[sub] = vlog / (std_log1p + 1e-9) if zscored else vlog
+            else:
+                D[sub] = _smooth_gauss(X[sub], t[sub], n_knots)
+    D = np.nan_to_num(D).astype(np.float32)
+    if verbose:
+        nz = int((np.abs(D).sum(1) == 0).sum())
+        print(f"[smooth_deriv] built ΔX {D.shape[0]}x{D.shape[1]}; {nz} cells with ΔX=0 "
+              f"(unfit clusters / no neighbours)", flush=True)
+    return D
+
+
 def zero_aug(adata, base, pseudotime_key, q=0.8):
     """Terminal ΔX≈0 supervision: copy `base` but zero the displacement for terminal (top-q pseudotime)
     cells, teaching the model that committed cells stop moving."""

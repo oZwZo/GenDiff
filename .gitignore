@@ -38,3 +38,19 @@ some_tutorials/test_notebook/resources/training_set/labels.json
 some_tutorials/test_notebook/resources/training_set/log_tpm_10x_genes.h5
 some_tutorials/test_notebook/resources/training_set/log_tpm.h5
 some_tutorials/test_notebook/data/zebrafish.h5ad
+data
+**.egg-info
+GenDiff-manuscript/response/R2.3/_scratch/
+
+GenDiff-manuscript/response/R2.2/results/preds/
+GenDiff-manuscript/response/R2.2/results/targets/
+GenDiff-manuscript/response/R2.3/results/cytotrace2_out/
+
+# transient training / run artifacts
+.claude/
+lightning_logs/
+runs/
+pth/
+/*.out
+/*.slurm
+*.npz
