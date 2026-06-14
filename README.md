@@ -59,14 +59,15 @@ python -c "import gendiff; print(gendiff.GenDiff)"
 ```python
 from gendiff import GenDiff
 
-# 1. register the data and build the ΔX target (runs the knn sampler once)
+# 1. register the data and build the ΔX target (runs the sampler once)
 GenDiff.setup_anndata(
     adata,
     condition_key="condition",        # obs column: perturbation label
     pseudotime_key="dpt_pseudotime",  # obs column: differentiation axis (control sits low)
     use_rep="X_pca",                  # obsm key: representation for the kNN graph
     control="ctrl",                   # the baseline label -> token 0
-    sampler_config="config1",         # geodesic, M=15, repeat=3 (recommended)
+    sampler="knn",                    # ΔX construction: "knn" | "smooth_nb" | "nb_global" | "ot" | "ptgrad"
+    sampler_config="config1",         # geodesic, M=15, repeat=3 (the "knn" preset)
 )
 
 # 2. build and train
