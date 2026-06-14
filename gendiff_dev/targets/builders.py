@@ -239,6 +239,12 @@ def _resolve_counts(adata, counts_layer):
         except Exception:
             log1p = _dense(adata.raw.X).astype(np.float64)
         if log1p.shape[1] == adata.n_vars:
+            if np.nanmax(log1p) > 30:
+                warnings.warn("_resolve_counts: adata.raw.X values exceed 30 — it is assumed to be log1p "
+                              "and expm1'd back to counts, but these look like RAW linear counts. expm1 "
+                              "will overflow and the NB sampler will degrade to ~0; pass a linear-count "
+                              "layer via sampler_kwargs={'counts_layer': ...} or store log1p in raw.",
+                              stacklevel=3)
             return np.expm1(log1p), log1p.std(0)
     return None, None
 
@@ -379,3 +385,111 @@ def zero_aug(adata, base, pseudotime_key, q=0.8):
     pt = np.asarray(adata.obs[pseudotime_key], float)
     D = np.asarray(base).copy(); D[pt >= np.quantile(pt, q)] = 0.0
     return D.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------------------------------
+# pt_gradient — the SAMPLER_OPT 'ptgrad' field: the gene-space gradient of pseudotime.
+#
+# Local linear regression of pseudotime on the use_rep kNN gives ∇_h t, the embedding-space direction of
+# steepest pseudotime increase per cell. A least-squares gene->embedding linear map W (ref ≈ [X|1]·W) pulls
+# it back to gene space: ΔX = ∇_h t · Wᵀ. This is the most FORWARD-reaching model-free field but it
+# over-disperses off-manifold and is condition-blind (it points up ∇t regardless of perturbation), so it is
+# an aggressive / ablation target, not a default — see SAMPLER_OPT/FINDINGS.md.
+# ---------------------------------------------------------------------------------------------------
+def pt_gradient(adata, *, use_rep, pseudotime_key, graph_k=15, max_rep=50, chunk=4000, verbose=True):
+    """Pseudotime-gradient ΔX target (n_obs, n_genes), in adata.X units, aligned to obs order.
+
+    The gene->embedding map is fit by least squares on ALL cells (an unsupervised linear projector, like
+    PCA loadings — no label leakage). `graph_k` is the neighbourhood for the local ∇t regression; `max_rep`
+    caps the embedding dimension used (the shipped reps are 30–50-d)."""
+    from sklearn.neighbors import NearestNeighbors
+    X = _dense(adata.X).astype(np.float64)
+    n, G = X.shape
+    ref = np.asarray(adata.obsm[use_rep], float)
+    ref = ref[:, :max_rep] if ref.shape[1] > max_rep else ref
+    t = np.asarray(adata.obs[pseudotime_key], float)
+
+    # gene -> embedding linear map (with bias): ref ≈ [X | 1] @ Wfull ; Wgene = Wfull without the bias row.
+    Xb = np.hstack([X, np.ones((n, 1))])
+    Wfull, *_ = np.linalg.lstsq(Xb, ref, rcond=None)
+    Wgene = Wfull[:-1]                                            # (G, d)
+    r2 = 1.0 - ((ref - Xb @ Wfull) ** 2).sum() / (((ref - ref.mean(0)) ** 2).sum() + 1e-9)
+
+    # local linear regression t ~ ref over each cell's kNN -> embedding gradient (batched min-norm lstsq).
+    nn = NearestNeighbors(n_neighbors=min(graph_k + 1, n)).fit(ref); _, idx = nn.kneighbors(ref)
+    idx = idx[:, 1:]
+    Gh = np.zeros((n, ref.shape[1]))
+    for c0 in range(0, n, chunk):
+        c1 = min(c0 + chunk, n)
+        A = ref[idx[c0:c1]] - ref[c0:c1, None, :]                # (b, k, d)
+        y = t[idx[c0:c1]] - t[c0:c1, None]                       # (b, k)
+        Gh[c0:c1] = np.einsum("bdk,bk->bd", np.linalg.pinv(A), y)
+    V = np.nan_to_num(Gh @ Wgene.T).astype(np.float32)
+    if verbose:
+        print(f"[pt_gradient] built ΔX {V.shape[0]}x{V.shape[1]}; gene->{use_rep} fit R2={r2:.3f}, "
+              f"graph_k={graph_k}", flush=True)
+    return V
+
+
+# ---------------------------------------------------------------------------------------------------
+# ot_sampler — the SAMPLER_OPT 'ot' field: per-cluster optimal-transport early->late displacement.
+#
+# Within each cluster, solve the EMD between EARLY (bottom-q pseudotime) and LATE (top-q) cells in use_rep
+# space; the barycentric map sends each early cell to its transported late position, ΔX = mapped − x. The
+# displacement is then kNN-interpolated from these early anchors to every cell. Because ΔX transports to
+# REAL late cells it is naturally manifold-scaled and does not over-push — the study's robust runner-up.
+# ---------------------------------------------------------------------------------------------------
+def ot_sampler(adata, *, use_rep, pseudotime_key, cluster_key="louvain", graph_k=15,
+               q_early=0.33, q_late=0.67, cap=400, min_cluster=20, min_ends=5, seed=0, verbose=True):
+    """Optimal-transport early->late ΔX target (n_obs, n_genes), in adata.X units, aligned to obs order.
+
+    `cluster_key` partitions the transport (each cluster fit independently); if absent, one global transport
+    is used. Clusters smaller than `min_cluster`, or with fewer than `min_ends` early/late cells, are skipped.
+    `cap` subsamples each end for the EMD solve. Requires POT (`pip install pot`)."""
+    import ot as POT
+    from sklearn.neighbors import NearestNeighbors
+    rng = np.random.default_rng(seed)
+    X = _dense(adata.X).astype(np.float64)
+    rep = np.asarray(adata.obsm[use_rep], float)
+    t = np.asarray(adata.obs[pseudotime_key], float)
+    n, G = X.shape
+    if cluster_key in adata.obs:
+        louv = adata.obs[cluster_key].astype(str).to_numpy()
+    else:
+        warnings.warn(f"ot_sampler: cluster_key {cluster_key!r} not in obs; using one global transport.",
+                      stacklevel=2)
+        louv = np.zeros(n, dtype=object)
+
+    Vsrc = np.zeros((n, G)); have = np.zeros(n, bool)
+    for l in np.unique(louv):
+        ci = np.where(louv == l)[0]
+        if ci.size < min_cluster:
+            continue
+        q1, q2 = np.quantile(t[ci], [q_early, q_late])
+        e = ci[t[ci] < q1]; lt = ci[t[ci] > q2]
+        if e.size < min_ends or lt.size < min_ends:
+            continue
+        if e.size > cap: e = rng.choice(e, cap, replace=False)
+        if lt.size > cap: lt = rng.choice(lt, cap, replace=False)
+        M = POT.dist(rep[e], rep[lt], metric="sqeuclidean"); M /= M.max() + 1e-9
+        Gp = POT.emd(np.ones(len(e)) / len(e), np.ones(len(lt)) / len(lt), M)
+        mapped = (Gp / (Gp.sum(1, keepdims=True) + 1e-12)) @ X[lt]
+        Vsrc[e] = mapped - X[e]; have[e] = True
+
+    if not have.any():
+        warnings.warn("ot_sampler: no cluster had enough early/late cells; returning ΔX=0.", stacklevel=2)
+        return np.zeros((n, G), np.float32)
+    # interpolate the OT displacement from anchor (early) cells to all cells via use_rep kNN (chunked).
+    anc = np.where(have)[0]; Va = Vsrc[anc]
+    nn = NearestNeighbors(n_neighbors=min(graph_k, anc.size)).fit(rep[anc])
+    V = np.zeros((n, G))
+    for c0 in range(0, n, 2000):
+        c1 = min(c0 + 2000, n)
+        d, ii = nn.kneighbors(rep[c0:c1])
+        w = np.exp(-d ** 2 / (np.median(d, 1, keepdims=True) ** 2 + 1e-9))
+        V[c0:c1] = (w[:, :, None] * Va[ii]).sum(1) / w.sum(1, keepdims=True)
+    V = np.nan_to_num(V).astype(np.float32)
+    if verbose:
+        print(f"[ot_sampler] built ΔX {V.shape[0]}x{V.shape[1]}; {anc.size} early anchors over "
+              f"{len(np.unique(louv))} cluster(s), interpolated to all cells", flush=True)
+    return V

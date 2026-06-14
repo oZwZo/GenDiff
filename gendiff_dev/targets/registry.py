@@ -15,7 +15,10 @@ Canonical names (resolved per-dataset by DEFS):
   real_velocity the use-the-velocity reference                   -> from_velocity_layer
   zero_aug      terminal-ΔX≈0 supervision on top of r3           -> zero_aug(base=r3)
   smooth_nb     per-cluster NB μ(t) derivative (SAMPLER_OPT win)  -> smooth_deriv(mode='nb')
+  nb_global     single global NB μ(t) derivative                  -> smooth_deriv(mode='nb', no cluster)
   smooth_unbiased  auto-root (potency) + per-cluster μ(t) deriv     -> smooth_deriv(mode='auto', auto_root)
+  ot            per-cluster optimal-transport early->late (robust) -> ot_sampler
+  ptgrad        pseudotime-gradient field (most forward; aggressive)-> pt_gradient
 """
 from __future__ import annotations
 import os, json, hashlib, numpy as np
@@ -32,7 +35,8 @@ def _paths(dataset, name):
 
 
 def list_targets():
-    return ["r100", "r3", "r3_euclid_m30", "real_velocity", "zero_aug", "smooth_nb", "smooth_unbiased"]
+    return ["r100", "r3", "r3_euclid_m30", "real_velocity", "zero_aug", "smooth_nb", "nb_global",
+            "smooth_unbiased", "ot", "ptgrad"]
 
 
 def _build(dataset, name, adata, spec):
@@ -60,6 +64,15 @@ def _build(dataset, name, adata, spec):
         p = dict(pseudotime_key=spec["pseudotime_key"], use_rep=spec["use_rep"], mode="nb",
                  cluster_key="louvain")
         return builders.smooth_deriv(adata, **p), dict(builder="smooth_deriv", mode="nb", cluster_key="louvain")
+    if name == "nb_global":
+        p = dict(pseudotime_key=spec["pseudotime_key"], use_rep=spec["use_rep"], mode="nb", cluster_key=None)
+        return builders.smooth_deriv(adata, **p), dict(builder="smooth_deriv", mode="nb", cluster_key=None)
+    if name == "ot":
+        p = dict(pseudotime_key=spec["pseudotime_key"], use_rep=spec["use_rep"], cluster_key="louvain")
+        return builders.ot_sampler(adata, **p), dict(builder="ot_sampler", cluster_key="louvain")
+    if name == "ptgrad":
+        p = dict(pseudotime_key=spec["pseudotime_key"], use_rep=spec["use_rep"])
+        return builders.pt_gradient(adata, **p), dict(builder="pt_gradient")
     if name == "smooth_unbiased":
         # only the ROOT is automated; algorithmic louvain + counts are routine preprocessing, not priors.
         p = dict(pseudotime_key=spec["pseudotime_key"], use_rep=spec["use_rep"], mode="auto",

@@ -48,15 +48,21 @@ class GenDiff:
         if None.
 
         sampler : which ΔX construction to use as supervision —
-          'knn'    (default) the higher-pseudotime neighbour-difference sampler (knn_sampler); pick the
-                   preset with `sampler_config` ('config1'/'config2'/'others').
-          'smooth' the SAMPLER_OPT smoothed mean-trajectory derivative (builders.smooth_deriv): the
-                   derivative of a smoothed per-gene μ(t), which removes the regression-to-mean confound
-                   the neighbour difference carries. Tune it through `sampler_kwargs`, e.g.
-                   {'mode': 'nb'|'gauss'|'local'|'auto', 'cluster_key': 'louvain', 'auto_root': True}.
-                   The fully prior-free choice is {'mode': 'local', 'auto_root': True}.
+          'knn'       (default) the higher-pseudotime neighbour-difference sampler (knn_sampler); pick the
+                      preset with `sampler_config` ('config1'/'config2'/'others').
+          'smooth_nb' per-cluster NB/Poisson μ(t) derivative (the SAMPLER_OPT winner): removes the
+                      regression-to-mean confound the neighbour difference carries and self-slows at the
+                      terminal plateau. Needs counts (adata.raw or a count layer) and `cluster_key`
+                      (default 'louvain'); falls back to a spline / one global cluster if absent.
+          'nb_global' the same NB derivative fit as ONE global trajectory (no clustering).
+          'ot'        per-cluster optimal-transport early->late displacement: the manifold-robust runner-up,
+                      naturally scaled because it transports to real late cells. Needs POT.
+          'ptgrad'    pseudotime-gradient field: reaches furthest forward but over-disperses off-manifold
+                      and is perturbation-blind — an aggressive / ablation target, not a default.
+          'smooth'    the generic smooth_deriv escape hatch; choose the mode yourself via `sampler_kwargs`
+                      ({'mode': 'nb'|'gauss'|'local'|'auto', 'cluster_key': ..., 'auto_root': True}).
         same_condition : True/False or 'auto' (decide from cells-per-condition density); 'knn' only.
-        sampler_kwargs : extra kwargs forwarded to the chosen sampler.
+        sampler_kwargs : extra kwargs forwarded to the chosen sampler (overrides the defaults above).
         """
         for k in (condition_key, pseudotime_key):
             if k not in adata.obs:
@@ -99,27 +105,40 @@ class GenDiff:
                       f"(median {med:.0f} cells/condition over {len(counts)} conditions)", flush=True)
 
         # build the ΔX supervision target with the chosen sampler
-        if sampler not in ("knn", "smooth"):
-            raise ValueError(f"setup_anndata: sampler must be 'knn' or 'smooth', got {sampler!r}")
+        valid_samplers = ("knn", "smooth", "smooth_nb", "nb_global", "ot", "ptgrad")
+        if sampler not in valid_samplers:
+            raise ValueError(f"setup_anndata: sampler must be one of {valid_samplers}, got {sampler!r}")
         if target_obsm in adata.obsm and not rebuild:
             if verbose:
                 print(f"[GenDiff.setup] obsm[{target_obsm!r}] exists; reuse (rebuild=True to redo)",
                       flush=True)
         else:
             from gendiff_dev.targets import builders
+            common = dict(use_rep=use_rep, pseudotime_key=pseudotime_key, verbose=verbose)
             if sampler == "knn":
-                kw = dict(use_rep=use_rep, pseudotime_key=pseudotime_key, condition_key=condition_key,
-                          same_condition=same_condition, config=sampler_config, graph_k=graph_k,
-                          alpha=alpha, seed=seed, verbose=verbose)
-                kw.update(sampler_kwargs or {})
-                dX = builders.knn_sampler(adata, **kw)
-            else:  # 'smooth' — SAMPLER_OPT mean-trajectory-derivative target
-                kw = dict(use_rep=use_rep, pseudotime_key=pseudotime_key, graph_k=graph_k,
-                          seed=seed, verbose=verbose)
-                kw.update(sampler_kwargs or {})
-                dX = builders.smooth_deriv(adata, **kw)
+                builder = builders.knn_sampler
+                kw = dict(condition_key=condition_key, same_condition=same_condition,
+                          config=sampler_config, graph_k=graph_k, alpha=alpha, seed=seed, **common)
+            elif sampler == "ptgrad":
+                builder = builders.pt_gradient
+                kw = dict(graph_k=graph_k, **common)
+            elif sampler == "ot":
+                builder = builders.ot_sampler
+                kw = dict(cluster_key="louvain", graph_k=graph_k, seed=seed, **common)
+            else:  # smooth_nb / nb_global / smooth (generic) -> smooth_deriv
+                builder = builders.smooth_deriv
+                mode = dict(smooth_nb="nb", nb_global="nb").get(sampler, "auto")
+                cluster_key = None if sampler == "nb_global" else "louvain"
+                kw = dict(mode=mode, cluster_key=cluster_key, graph_k=graph_k, seed=seed, **common)
+            kw.update(sampler_kwargs or {})
+            dX = builder(adata, **kw)
             if dX.shape[1] != adata.n_vars:
                 warnings.warn(f"setup_anndata: ΔX has {dX.shape[1]} genes != n_vars {adata.n_vars}")
+            rms = float(np.sqrt(np.mean(np.square(np.asarray(dX, np.float64)))))
+            if rms < 0.01:
+                warnings.warn(f"setup_anndata: target ΔX RMS={rms:.2e} is very small (ptgrad is a "
+                              f"direction field, not magnitude-calibrated); the model regresses ΔX "
+                              f"magnitude, so consider scaling the target or raising lr when training.")
             adata.obsm[target_obsm] = dX
 
         if split_key is None:

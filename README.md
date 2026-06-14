@@ -91,10 +91,26 @@ model = GenDiff.load("runs/sox2", adata)
 | Pseudotime | `adata.obs[pseudotime_key]` | The differentiation axis; controls should sit low. `sc.tl.dpt` with a control cell as root. |
 | Condition column | `adata.obs[condition_key]` | Perturbation labels; one of them is the control (`control=`, inferred if omitted). |
 
-## Sampler configs
+## Samplers (the ΔX supervision target)
 
-The ΔX supervision is built once inside `setup_anndata` by the revised `knn_sampler`. Pick the
-parameter combination with `sampler_config`:
+The ΔX supervision is built once inside `setup_anndata`. The `sampler` argument picks **how** the target
+field is constructed; all of them return a per-cell gene-space ΔX written to `obsm["gendiff_dX"]`:
+
+| `sampler` | what ΔX is | needs | when to use |
+|---|---|---|---|
+| `"knn"` (default) | mean displacement to higher-pseudotime neighbours | `use_rep` | the shipped r3 target; pick the preset with `sampler_config` |
+| `"smooth_nb"` | d·log1p(μ)/dt of a per-cluster NB mean-expression curve | counts + `louvain` | reversion-free, self-slows at the terminal — the sampler-study winner |
+| `"nb_global"` | the same NB derivative, one global trajectory | counts | when there is no meaningful clustering |
+| `"ot"` | per-cluster optimal-transport early→late displacement | POT + `louvain` | manifold-robust alternative (transports to real late cells) |
+| `"ptgrad"` | gene-space gradient of pseudotime | `use_rep` | most forward-reaching, but off-manifold and perturbation-blind — ablation only |
+| `"smooth"` | generic `smooth_deriv` escape hatch | — | choose `mode` via `sampler_kwargs` (`nb`/`gauss`/`local`/`auto`, `auto_root`) |
+
+The NB/OT samplers fall back gracefully (NB → spline if no counts; per-cluster → one global cluster if no
+`louvain`), printing what they actually ran. The recommended default for trajectory supervision is
+`smooth_nb`; `ptgrad` reaches furthest but over-disperses and is **not** recommended as a default (see
+`GenDiff-manuscript/response/SAMPLER_OPT/FINDINGS.md`).
+
+For `sampler="knn"`, pick the parameter combination with `sampler_config`:
 
 | `sampler_config` | metric | M | repeat | meaning |
 |---|---|---|---|---|
